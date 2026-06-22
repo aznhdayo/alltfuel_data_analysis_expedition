@@ -3,7 +3,7 @@
 // `mapboxgl` unconditionally here would throw a ReferenceError and abort the
 // script before Parse.initialize() runs (breaking every Back4App query).
 if (typeof mapboxgl !== 'undefined') {
-  mapboxgl.accessToken = 'pk.eyJ1IjoiYXpuaGRheW8iLCJhIjoiY21lMGV4eGQ4MDQ0NjJ4b2Z5c3k1bXA1cyJ9.3BOBrlkxGtNocfCYuWXUug';
+  mapboxgl.accessToken = '';
 }
 
 // PARSE
