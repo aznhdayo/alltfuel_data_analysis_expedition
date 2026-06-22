@@ -8,7 +8,6 @@ if (typeof mapboxgl !== 'undefined') {
 
 // PARSE
 Parse.initialize(
-  "gbW0BkveFDrQJxbgGLqka2HeITel0qsXob9iFwI8",
-  "o52J3Sy1bpGo7LH5LLYF0HiSRLl77ZvgDCrSBiu3"
+  ""
 );
 Parse.serverURL = "https://parseapi.back4app.com/";
