@@ -80,6 +80,21 @@ navAbout.addEventListener("click", () => {
   if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
+/* Footer quick links mirror the primary nav destinations */
+[
+  ["footerMap", "station-map"],
+  ["footerAnalytics", "analytics"],
+  ["footerAbout", "about"],
+].forEach(([id, targetId]) => {
+  const link = document.getElementById(id);
+  if (!link) return;
+  link.addEventListener("click", () => {
+    showScreen(homeScreen);
+    const section = document.getElementById(targetId);
+    if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+});
+
 /* -------------------------------------------------------
    VALUE CARD CLICK HANDLERS
 ------------------------------------------------------- */
@@ -149,3 +164,48 @@ pendingBackHome.addEventListener("click", (e) => {
 ------------------------------------------------------- */
 showScreen(homeScreen);
 updateNavForLoginState();
+
+/* -------------------------------------------------------
+   DOWNLOAD SECTION (login-gated)
+------------------------------------------------------- */
+function showDownloadAlert() {
+  const alertEl = document.getElementById("downloadAlert");
+  if (!alertEl) return;
+  alertEl.style.display = "block";
+  // Scroll banner into view (so user sees the dedicated message)
+  try { alertEl.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (_) {}
+}
+
+function hideDownloadAlert() {
+  const alertEl = document.getElementById("downloadAlert");
+  if (!alertEl) return;
+  alertEl.style.display = "none";
+}
+
+// Banner buttons
+const downloadLoginBtn = document.getElementById("downloadLoginBtn");
+if (downloadLoginBtn) {
+  downloadLoginBtn.addEventListener("click", () => {
+    hideDownloadAlert();
+    showScreen(loginScreen);
+  });
+}
+
+const downloadCancelBtn = document.getElementById("downloadCancelBtn");
+if (downloadCancelBtn) {
+  downloadCancelBtn.addEventListener("click", () => {
+    hideDownloadAlert();
+  });
+}
+
+// Gate download links
+const downloadLinks = document.querySelectorAll(".download-file-link[data-download-file]");
+downloadLinks.forEach(link => {
+  link.addEventListener("click", (e) => {
+    const user = Parse.User.current();
+    if (!user) {
+      e.preventDefault();
+      showDownloadAlert();
+    }
+  });
+});
