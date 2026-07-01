@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Evasta — About</title>
+
+  <link rel="icon" type="image/png" href="images/evasta_logo.png">
+  <link rel="apple-touch-icon" href="images/evasta_logo.png">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    .about-page .hero {
+      min-height: auto;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+      gap: 28px;
+      align-items: start;
+      padding: 116px 64px 42px;
+      grid-template-areas:
+        "intro logo"
+        "grid grid"
+        "feedback feedback";
+    }
+
+    .about-intro {
+      max-width: 760px;
+      grid-area: intro;
+    }
+
+    .about-logo-showcase {
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      width: 100%;
+      grid-area: logo;
+    }
+
+    .about-logo-box {
+      width: min(640px, 100%);
+      min-height: 440px;
+      background: rgba(255, 255, 255, 0.98);
+      border: 1px solid rgba(12, 42, 77, 0.16);
+      border-radius: 22px;
+      box-shadow: 0 18px 40px rgba(8, 22, 41, 0.22);
+      padding: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .about-logo-box::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 15% 18%, rgba(29, 111, 196, 0.10), transparent 40%),
+        radial-gradient(circle at 86% 22%, rgba(52, 197, 226, 0.12), transparent 42%),
+        radial-gradient(circle at 52% 88%, rgba(12, 42, 77, 0.08), transparent 45%);
+      pointer-events: none;
+    }
+
+    .about-logo-box img {
+      width: min(96%, 560px);
+      height: auto;
+      object-fit: contain;
+      display: block;
+      position: relative;
+      z-index: 1;
+      filter: saturate(1.06) contrast(1.06);
+    }
+
+    .about-intro .hero-title {
+      margin-bottom: 10px;
+    }
+
+    .about-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 18px;
+      grid-area: grid;
+    }
+
+    .about-card {
+      background: rgba(255, 255, 255, 0.94);
+      border-radius: 18px;
+      padding: 22px;
+      border: 1px solid rgba(16, 19, 26, 0.08);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .about-card h3 {
+      margin-bottom: 8px;
+      color: var(--ink);
+    }
+
+    .about-card p {
+      margin: 0;
+      color: var(--ink-soft);
+      line-height: 1.6;
+    }
+
+    .about-list {
+      margin: 0;
+      padding-left: 1.2rem;
+      color: var(--ink-soft);
+      line-height: 1.65;
+    }
+
+    .about-list li + li {
+      margin-top: 8px;
+    }
+
+    .about-list strong {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .about-context {
+      margin-top: 14px;
+      color: var(--ink-soft);
+      line-height: 1.68;
+      font-size: 15px;
+    }
+
+    .about-feedback {
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px dashed rgba(29, 111, 196, 0.38);
+      border-radius: 18px;
+      padding: 22px;
+      margin-top: 18px;
+      box-shadow: var(--shadow-soft);
+      grid-area: feedback;
+    }
+
+    .about-feedback h3 {
+      margin-bottom: 8px;
+      color: var(--ink);
+    }
+
+    .feedback-placeholder {
+      margin-top: 12px;
+      border-radius: 12px;
+      background: rgba(29, 111, 196, 0.07);
+      border: 1px solid rgba(29, 111, 196, 0.18);
+      padding: 14px;
+      color: var(--ink-soft);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .about-cta {
+      margin-top: 20px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 980px) {
+      .about-page .hero {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "intro"
+          "logo"
+          "grid"
+          "feedback";
+        padding: 96px 28px 30px;
+      }
+
+      .about-logo-box {
+        width: min(560px, 100%);
+        min-height: 320px;
+        padding: 18px;
+      }
+
+      .about-logo-box img {
+        width: min(94%, 460px);
+      }
+
+      .about-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body class="about-page">
+  <div class="text-logo">
+    <img class="brand-logo" src="images/evasta_logo.png" alt="Evasta logo">
+  </div>
+
+  <nav>
+    <a class="nav-home" href="index.html" aria-label="Return to homepage">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
+      Home
+    </a>
+    <a id="navMap" href="california-deep-dive.html">California Deep Dive</a>
+    <a id="navAnalytics" href="texas-deep-dive.html">Texas Deep Dive</a>
+    <a id="navResources" href="resources.html">Resources</a>
+    <a id="navAbout" href="about.html">About</a>
+  </nav>
+
+  <div id="homeScreen" class="screen active">
+    <main class="landing">
+      <section class="hero" aria-labelledby="about-title">
+        <div class="about-intro">
+          <p class="hero-eyebrow">About Evasta</p>
+          <h1 id="about-title" class="hero-title">Building clarity for EV charging infrastructure decisions.</h1>
+          <ul class="about-list hero-lede" aria-label="About Evasta summary">
+            <li>Electric vehicle (EV) charging infrastructure in the United States is expanding rapidly.</li>
+            <li>Relevant data can be difficult to access, analyze, and visualize in practical workflows.</li>
+            <li>This platform makes national EV charging insights clearer, more accessible, and more actionable.</li>
+            <li>Primary audiences include city planners, policy makers, researchers, businesses, and everyday EV drivers.</li>
+            <li>Evasta connects public infrastructure data to real planning questions: where growth is accelerating, where gaps remain, and how network distribution changes month by month.</li>
+          </ul>
+          <p class="about-context">
+            As EV adoption grows, charging infrastructure planning becomes more than a technical exercise—it becomes
+            a public-access, energy-equity, and transportation-readiness challenge. The purpose of this page is to explain
+            how Evasta organizes that complexity into practical insights that are easier to trust and act on.
+          </p>
+          <div class="about-cta">
+            <a class="btn primary" href="index.html">Back to US Overview</a>
+            <a class="btn ghost" href="california-deep-dive.html">Explore California Deep Dive</a>
+          </div>
+        </div>
+
+        <aside class="about-logo-showcase" aria-label="Evasta brand showcase">
+          <div class="about-logo-box">
+            <img src="images/evasta_logo.png" alt="Evasta logo">
+          </div>
+        </aside>
+
+        <div class="about-grid">
+          <article class="about-card">
+            <h3>Our Mission</h3>
+            <ul class="about-list">
+              <li>Turn raw federal EV charging data into meaningful insights.</li>
+              <li>Provide practical tools for planning and decision-making.</li>
+              <li>Support transparent, evidence-based infrastructure discussions across public and private stakeholders.</li>
+              <li>Reduce the time between data collection and practical action.</li>
+            </ul>
+            <p class="about-context">
+              Our mission is focused on translation: taking large, technical datasets and converting them into clear, interpretable
+              patterns that support real-world decisions for expansion strategy, policy prioritization, and service reliability.
+            </p>
+          </article>
+          <article class="about-card">
+            <h3>What This Platform Covers</h3>
+            <ul class="about-list">
+              <li>Uses the U.S. Department of Energy AFDC monthly station dataset.</li>
+              <li>State-level charging summaries with comparable metrics.</li>
+              <li>EV network/operator comparisons to assess market structure.</li>
+              <li>Plug counts and network-by-state matrices for capacity visibility.</li>
+              <li>California-specific county and network analytics for localized planning.</li>
+              <li>Month-over-month trend tracking to identify momentum shifts.</li>
+              <li>Coverage views that reveal concentration, imbalance, and expansion corridors.</li>
+              <li>Practical summaries that support both executive overviews and analytical deep dives.</li>
+            </ul>
+            <p class="about-context">
+              This platform is built to bridge national and local perspectives. It provides the breadth needed for
+              policy and funding context, while still preserving enough granularity to support county-level and
+              corridor-level questions.
+            </p>
+          </article>
+          <article class="about-card">
+            <h3>Why It Helps</h3>
+            <ul class="about-list">
+              <li>AFDC data is comprehensive but large and complex for many users.</li>
+              <li>Transforms raw national data into monthly plug-count analytics.</li>
+              <li>Provides state-level and network-level comparisons.</li>
+              <li>Adds California county-level summaries and trend visualizations.</li>
+              <li>Highlights where infrastructure investment appears to be keeping pace—or falling behind—demand signals.</li>
+              <li>Fills a public gap with a transparent, easy-to-use platform built on open federal data.</li>
+            </ul>
+            <p class="about-context">
+              Better visibility leads to better decisions. By simplifying how infrastructure data is read and compared,
+              Evasta helps teams spend less time reconciling spreadsheets and more time deciding where to build next.
+            </p>
+          </article>
+          <article class="about-card">
+            <h3>Who this Project was made for</h3>
+            <ul class="about-list">
+              <li>Counties and regional planners.</li>
+              <li>Clean Cities Coalitions.</li>
+              <li>State energy offices.</li>
+              <li>Transportation researchers and academic teams.</li>
+              <li>EV charging companies and ecosystem partners.</li>
+              <li>Journalists, analysts, and civic data advocates.</li>
+              <li>Anyone interested in EV infrastructure growth.</li>
+              <li>Supports both high-level national trends and practical, actionable analysis.</li>
+            </ul>
+            <p class="about-context">
+              Whether the goal is policy design, grant planning, infrastructure deployment, or public communication,
+              this project is designed to provide a shared factual baseline that different audiences can interpret quickly.
+            </p>
+            <h3> Whether you need high level national trends, this platform provides clear, actionable information.</h3>
+          </article>
+        </div>
+
+        <section class="about-feedback" aria-labelledby="feedback-title">
+          <h3 id="feedback-title">Personal Feedback Section</h3>
+          <ul class="about-list">
+            <li>Use the placeholders below to add personal notes, project background, or a feedback summary.</li>
+            <li>Capture recurring stakeholder themes, open questions, and next-step priorities as the project evolves.</li>
+          </ul>
+          <p class="about-context">
+            This section is intentionally flexible so you can document lessons learned, implementation constraints,
+            stakeholder reactions, and future research ideas in one place.
+          </p>
+          <div class="feedback-placeholder">
+            <ul class="about-list">
+              <li><strong>About Me / Team:</strong> [Write your personal intro here — who you are, your role, and what this project means to you.]</li>
+            </ul>
+          </div>
+          <div class="feedback-placeholder">
+            <ul class="about-list">
+              <li><strong>All EV charging data on this website comes from the U.S. Department of Energy Alternative
+Fuels Data Center (AFDC). Monthly analytics use the AFDC station CSV dataset
+We are not affiliated with AFDC or DOE; we simply use their publicly available data to create
+tools that support their mission of expanding alternative fuel infrastructure.</li>
+            </ul>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="brand-mark" aria-hidden="true">
+            <img src="images/evasta_logo.png" alt="Evasta logo">
+          </span>
+          <div>
+            <div class="footer-name">Evasta</div>
+            <p class="footer-tagline">EV charging infrastructure analytics across America.</p>
+          </div>
+        </div>
+        <nav class="footer-links" aria-label="Footer">
+          <a href="california-deep-dive.html">California Deep Dive</a>
+          <a href="texas-deep-dive.html">Texas Deep Dive</a>
+          <a href="resources.html">Resources</a>
+          <a href="about.html">About</a>
+        </nav>
+      </div>
+      <div class="footer-bottom">
+        <span>&copy; 2026 Evasta. All rights reserved.</span>
+        <span>Public EV DC charging infrastructure</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

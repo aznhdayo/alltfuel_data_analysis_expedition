@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Evasta — Resources</title>
+
+  <link rel="icon" type="image/png" href="images/evasta_logo.png">
+  <link rel="apple-touch-icon" href="images/evasta_logo.png">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    .resources-page .hero {
+      min-height: auto;
+      padding: 116px 64px 38px;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+      gap: 26px;
+      align-items: start;
+    }
+
+    .resources-intro {
+      max-width: 780px;
+    }
+
+    .resources-lede {
+      margin-top: 12px;
+      color: var(--ink-soft);
+      line-height: 1.68;
+    }
+
+    .resources-highlight {
+      margin-top: 14px;
+      background: rgba(29, 111, 196, 0.07);
+      border: 1px solid rgba(29, 111, 196, 0.20);
+      color: var(--ink);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .resources-logo-card {
+      background: rgba(255, 255, 255, 0.98);
+      border: 1px solid rgba(12, 42, 77, 0.16);
+      border-radius: 22px;
+      box-shadow: 0 18px 40px rgba(8, 22, 41, 0.22);
+      min-height: 260px;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .resources-logo-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 18% 20%, rgba(29, 111, 196, 0.10), transparent 40%),
+        radial-gradient(circle at 82% 24%, rgba(52, 197, 226, 0.12), transparent 42%),
+        radial-gradient(circle at 54% 84%, rgba(12, 42, 77, 0.08), transparent 45%);
+      pointer-events: none;
+    }
+
+    .resources-logo-card img {
+      width: min(92%, 360px);
+      height: auto;
+      position: relative;
+      z-index: 1;
+      object-fit: contain;
+      display: block;
+    }
+
+    .resources-section {
+      padding-top: 6px;
+    }
+
+    .resource-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 18px;
+    }
+
+    .resource-card {
+      background: rgba(255, 255, 255, 0.94);
+      border-radius: 18px;
+      padding: 22px;
+      border: 1px solid rgba(16, 19, 26, 0.08);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .resource-card h3 {
+      margin: 0 0 8px;
+      color: var(--ink);
+    }
+
+    .resource-card p {
+      margin: 0 0 14px;
+      color: var(--ink-soft);
+      line-height: 1.6;
+    }
+
+    .resource-meta {
+      font-size: 13px;
+      color: var(--ink-soft);
+      margin-bottom: 12px;
+    }
+
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      border: 1px solid rgba(12, 42, 77, 0.18);
+      background: #fff;
+      color: var(--ink);
+      font-weight: 600;
+      transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+    }
+
+    .download-btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(29, 111, 196, 0.38);
+      box-shadow: 0 10px 20px rgba(8, 22, 41, 0.12);
+    }
+
+    @media (max-width: 980px) {
+      .resources-page .hero {
+        grid-template-columns: 1fr;
+        padding: 96px 28px 28px;
+      }
+
+      .resource-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body class="resources-page">
+  <div class="text-logo">
+    <img class="brand-logo" src="images/evasta_logo.png" alt="Evasta logo">
+  </div>
+
+  <nav>
+    <a class="nav-home" href="index.html" aria-label="Return to homepage">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
+      Home
+    </a>
+    <a id="navMap" href="california-deep-dive.html">California Deep Dive</a>
+    <a id="navAnalytics" href="texas-deep-dive.html">Texas Deep Dive</a>
+    <a id="navResources" href="resources.html">Resources</a>
+    <a id="navAbout" href="about.html">About</a>
+  </nav>
+
+  <div id="homeScreen" class="screen active">
+    <main class="landing">
+      <section class="hero" aria-labelledby="resources-title">
+        <div class="resources-intro">
+          <p class="hero-eyebrow">Evasta Resources</p>
+          <h1 id="resources-title" class="hero-title">Free downloadable EV charging CSV datasets.</h1>
+          <p class="resources-lede">
+            This page provides a simple place to access downloadable CSV files used for analysis in this project.
+            All files are shared free for personal and educational use so users can explore, audit, and build on the same public-data workflow.
+          </p>
+          <p class="resources-highlight">
+            Note: placeholder download links are currently set up. Replace each file path with your final CSV files when ready.
+          </p>
+        </div>
+
+        <aside class="resources-logo-card" aria-label="Evasta resources logo panel">
+          <img src="images/evasta_logo.png" alt="Evasta logo">
+        </aside>
+      </section>
+
+      <section class="section-shell resources-section" aria-labelledby="download-title">
+        <div class="section-heading">
+          <p class="section-eyebrow">CSV Downloads</p>
+          <h2 id="download-title">Download datasets directly</h2>
+          <p>Choose a file below to download. These are starter placeholders for your personal free CSV bundle.</p>
+        </div>
+
+        <div class="resource-grid">
+          <article class="resource-card">
+            <h3>US Monthly State Summary</h3>
+            <p>State-level monthly totals for EV stations and plug counts.</p>
+            <div class="resource-meta">Format: CSV · Scope: United States · Frequency: Monthly</div>
+            <a class="download-btn" href="resources/us_monthly_state_summary.csv" download>Download CSV</a>
+          </article>
+
+          <article class="resource-card">
+            <h3>US Network Share by Month</h3>
+            <p>Monthly EV network/operator share metrics across the U.S.</p>
+            <div class="resource-meta">Format: CSV · Scope: United States · Frequency: Monthly</div>
+            <a class="download-btn" href="resources/us_network_share_monthly.csv" download>Download CSV</a>
+          </article>
+
+          <article class="resource-card">
+            <h3>California County Summary</h3>
+            <p>County-level station and plug totals for California deep-dive analysis.</p>
+            <div class="resource-meta">Format: CSV · Scope: California Counties · Frequency: Monthly</div>
+            <a class="download-btn" href="resources/ca_county_summary.csv" download>Download CSV</a>
+          </article>
+
+          <article class="resource-card">
+            <h3>Texas City Summary</h3>
+            <p>City-level station counts and trend data for Texas analysis.</p>
+            <div class="resource-meta">Format: CSV · Scope: Texas Cities · Frequency: Monthly</div>
+            <a class="download-btn" href="resources/tx_city_summary.csv" download>Download CSV</a>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="brand-mark" aria-hidden="true">
+            <img src="images/evasta_logo.png" alt="Evasta logo">
+          </span>
+          <div>
+            <div class="footer-name">Evasta</div>
+            <p class="footer-tagline">EV charging infrastructure analytics across America.</p>
+          </div>
+        </div>
+        <nav class="footer-links" aria-label="Footer">
+          <a href="california-deep-dive.html">California Deep Dive</a>
+          <a href="texas-deep-dive.html">Texas Deep Dive</a>
+          <a href="resources.html">Resources</a>
+          <a href="about.html">About</a>
+        </nav>
+      </div>
+      <div class="footer-bottom">
+        <span>&copy; 2026 Evasta. All rights reserved.</span>
+        <span>Public EV DC charging infrastructure</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>
