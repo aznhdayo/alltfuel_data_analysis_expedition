@@ -1,0 +1,7 @@
+- [x] Upgrade chatbot to AI-style project-aware assistant
+  - [x] Add project knowledge context + conversation memory in `js/chatbot.js`
+  - [x] Use Parse AI response path when available with grounding rules
+  - [x] Keep robust local fallback to avoid repetitive replies
+  - [x] Keep widget UI behavior unchanged
+- [x] Update progress after each file edit
+- [x] Final verification pass across affected chatbot behavior
