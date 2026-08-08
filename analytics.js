@@ -75,6 +75,18 @@ const MAX_US_COMPARE_STATES = 4;
 let cachedUSData = null;
 let cachedCAData = null;
 
+// Selected plugs field for charts: 'total_all_plugs' | 'total_dc_fast_plugs' | 'total_level2_plugs'
+let selectedPlugsField = 'total_all_plugs';
+
+function plugsFieldLabel(field) {
+  switch (field) {
+    case 'total_dc_fast_plugs': return 'DC Fast plugs';
+    case 'total_level2_plugs': return 'Level 2 plugs';
+    case 'total_all_plugs':
+    default: return 'All plugs';
+  }
+}
+
 /* -------------------------------------------------------
    HELPERS
 ------------------------------------------------------- */
@@ -154,6 +166,50 @@ async function fetchLatestYearMonth(className, fieldName = 'year_month') {
   qLatest.limit(1);
   const rows = await qLatest.find();
   return rows?.[0]?.get(fieldName) || null;
+}
+
+async function fetchLatestYearMonthForNetworkState(stateCode) {
+  const query = new Parse.Query('EV_Network_State_Summary');
+
+  if (stateCode && stateCode !== 'ALL') {
+    query.equalTo('state', stateCode);
+  }
+
+  query.select(['year_month']);
+  query.descending('year_month');
+  query.limit(1);
+
+  const rows = await query.find();
+
+  try {
+    console.debug(`[DEBUG] fetchCACountyMonthlySeriesAll field=${fieldName} rows=${rows.length}`);
+    if (rows && rows.length) {
+      const sample = rows.slice(0, 3).map(r => ({ county: r.get('county'), value: Number(r.get(fieldName) || 0) }));
+      console.debug('[DEBUG] fetchCACountyMonthlySeriesAll sample:', sample);
+    }
+  } catch (e) {
+    console.debug('[DEBUG] fetchCACountyMonthlySeriesAll logging failed', e);
+  }
+  return rows?.[0]?.get('year_month') || null;
+}
+
+async function fetchLatestYearMonthForNetworkCounty(countyNames = []) {
+  const counties = Array.isArray(countyNames)
+    ? countyNames.filter(Boolean)
+    : [countyNames].filter(Boolean);
+
+  const query = new Parse.Query('EV_Network_CA_County');
+
+  if (counties.length) {
+    query.containedIn('county', counties);
+  }
+
+  query.select(['year_month']);
+  query.descending('year_month');
+  query.limit(1);
+
+  const rows = await query.find();
+  return rows?.[0]?.get('year_month') || null;
 }
 
 function generateMonthsSince2026() {
@@ -591,18 +647,24 @@ async function fetchUSMonthlyCumulativeSeries(fieldName, { filterToJan2026 = tru
  * while still only DISPLAYING months >= 2026_01.
  */
 async function fetchUSMonthlyCumulativeSeriesUnfiltered(fieldName) {
-  const allMonthly = await fetchUSAllMonthlyPlugsAndStations();
+  const allMonthly = await fetchUSAllMonthlyPlugsAndStations(fieldName === 'total_stations' ? null : fieldName);
   const valuesByYearMonth = fieldName === 'total_stations'
     ? allMonthly.stationsByYearMonth
     : allMonthly.plugsByYearMonth;
   return { yearMonths: allMonthly.yearMonthsAll, valuesByYearMonth };
 }
 
-async function fetchUSAllMonthlyPlugsAndStations() {
-  if (usAllMonthlyCache) return usAllMonthlyCache;
+// Cache per-plugs-field so callers can request total_all_plugs, total_dc_fast_plugs, or total_level2_plugs
+const usAllMonthlyCacheMap = {};
+async function fetchUSAllMonthlyPlugsAndStations(plugsField = 'total_all_plugs') {
+  const cacheKey = String(plugsField || 'total_all_plugs');
+  if (usAllMonthlyCacheMap[cacheKey]) return usAllMonthlyCacheMap[cacheKey];
 
   const query = new Parse.Query('State_Summary');
-  query.select(['year_month', 'total_all_plugs', 'total_stations']);
+  // Always fetch stations; plugs column may vary
+  const selectCols = ['year_month', 'total_stations'];
+  if (plugsField) selectCols.push(plugsField);
+  query.select(selectCols);
   query.limit(20000);
 
   const results = await query.find();
@@ -611,7 +673,7 @@ async function fetchUSAllMonthlyPlugsAndStations() {
   results.forEach(r => {
     const ym = r.get('year_month');
     if (!ym) return;
-    const plugsVal = r.get('total_all_plugs');
+    const plugsVal = plugsField ? r.get(plugsField) : 0;
     const stationsVal = r.get('total_stations');
     plugsByYearMonth[ym] = (plugsByYearMonth[ym] || 0) + (typeof plugsVal === 'number' ? plugsVal : Number(plugsVal || 0));
     stationsByYearMonth[ym] = (stationsByYearMonth[ym] || 0) + (typeof stationsVal === 'number' ? stationsVal : Number(stationsVal || 0));
@@ -622,8 +684,9 @@ async function fetchUSAllMonthlyPlugsAndStations() {
     ...Object.keys(stationsByYearMonth)
   ])).sort((a, b) => String(a).localeCompare(String(b)));
 
-  usAllMonthlyCache = { yearMonthsAll, plugsByYearMonth, stationsByYearMonth };
-  return usAllMonthlyCache;
+  const result = { yearMonthsAll, plugsByYearMonth, stationsByYearMonth };
+  usAllMonthlyCacheMap[cacheKey] = result;
+  return result;
 }
 
 /**
@@ -633,7 +696,6 @@ async function fetchUSAllMonthlyPlugsAndStations() {
 /* --- Performance caches (avoid repeated Parse calls) --- */
 const availableYearsCache = {};
 const stateMonthlyCache = {}; // stateCode -> { yearMonthsAll, plugsByYM, stationsByYM }
-let usAllMonthlyCache = null;
 
 /**
  * One query to fetch both cumulative series for a state.
@@ -777,7 +839,6 @@ async function loadMonthlyUSAdded() {
   const wrapId = 'monthlyAddedChartWrap';
   const canvas = document.getElementById('monthlyAddedChart');
   if (!canvas) {
-    console.warn('loadMonthlyUSAdded: canvas not found (id="monthlyAddedChart"); skipping.');
     return;
   }
 
@@ -879,6 +940,16 @@ async function loadTopNetworksUS() {
     query.limit(5000);
 
     const rows = await query.find();
+
+    try {
+      console.debug(`[DEBUG] renderCANetworkShareDonut plugsField=${plugsField} year_month=${latestYM} rows=${rows.length}`);
+      if (rows && rows.length) {
+        const sample = rows.slice(0, 5).map(r => ({ county: r.get('county'), network: r.get('ev_network'), value: Number(r.get(plugsField) || 0) }));
+        console.debug('[DEBUG] renderCANetworkShareDonut sample:', sample);
+      }
+    } catch (e) {
+      console.debug('[DEBUG] renderCANetworkShareDonut logging failed', e);
+    }
 
     const counts = {};
     rows.forEach(r => {
@@ -1440,8 +1511,9 @@ async function updateCaHeroTotalsForSelection(countyNames = []) {
     .slice(0, MAX_CA_COMPARE_COUNTIES);
 
   try {
+    const plugsField = selectedPlugsField || 'total_all_plugs';
     const [plugsSeries, stationsSeries] = await Promise.all([
-      fetchCACountyMonthlySeriesAll('total_all_plugs'),
+      fetchCACountyMonthlySeriesAll(plugsField),
       fetchCACountyMonthlySeriesAll('total_stations')
     ]);
 
@@ -1509,8 +1581,9 @@ function selectCaCounty(countyName, opts = {}) {
 
   startGlobalLoad('Loading county selection…');
   Promise.all([
-    updateCaHeroTotalsForSelection(next),
-    renderCountyDeepDiveCharts(next)
+  updateCaHeroTotalsForSelection(next),
+  renderCountyDeepDiveCharts(next),
+  renderCANetworkShareDonut(next)
   ])
     .catch(err => console.error('County deep-dive render failed:', err))
     .finally(finishGlobalLoad);
@@ -1520,8 +1593,9 @@ function refreshCaYearSelection() {
   const counties = getSelectedCaCountyNames();
   startGlobalLoad(counties.length ? 'Loading county comparison charts…' : 'Loading California totals…');
   Promise.all([
-    updateCaHeroTotalsForSelection(counties),
-    renderCountyDeepDiveCharts(counties)
+  updateCaHeroTotalsForSelection(counties),
+  renderCountyDeepDiveCharts(counties),
+  renderCANetworkShareDonut(counties)
   ])
     .catch(err => console.error('CA year refresh failed:', err))
     .finally(finishGlobalLoad);
@@ -1536,8 +1610,9 @@ function resetCaYearSelection() {
   setCaCountySelection([]);
   startGlobalLoad('Resetting California totals…');
   Promise.all([
-    updateCaHeroTotalsForSelection([]),
-    renderCountyDeepDiveCharts([])
+  updateCaHeroTotalsForSelection([]),
+  renderCountyDeepDiveCharts([]),
+  renderCANetworkShareDonut([])
   ])
     .catch(err => console.error('CA reset failed:', err))
     .finally(finishGlobalLoad);
@@ -1565,6 +1640,47 @@ function bindCaCountyControls() {
   if (yearResetBtn) {
     yearResetBtn.addEventListener('click', resetCaYearSelection);
   }
+
+  // Plugs type selector for California page
+  const typeSelectEl = document.getElementById('caPlugsTypeSelect');
+  if (typeSelectEl) {
+    typeSelectEl.value = selectedPlugsField;
+    typeSelectEl.addEventListener('change', () => {
+      const prev = selectedPlugsField;
+      selectedPlugsField = typeSelectEl.value || 'total_all_plugs';
+      console.debug('[DEBUG] CA plugs type changed', { from: prev, to: selectedPlugsField });
+      // Clear CA-specific caches so fetches reflect new field
+      try { Object.keys(caCountySeriesCache).forEach(k => delete caCountySeriesCache[k]); } catch (e) {}
+      try { Object.keys(usAllMonthlyCacheMap).forEach(k => delete usAllMonthlyCacheMap[k]); } catch (e) {}
+      try { Object.keys(stateMonthlyCache).forEach(k => delete stateMonthlyCache[k]); } catch (e) {}
+      // Re-render CA charts to reflect new plugs type
+      refreshCaYearSelection();
+    });
+  }
+
+  // Small on-page debug panel for California page to show selected field and cache sizes
+  function updateCaDebugPanel() {
+    try {
+      let panel = document.getElementById('caDebugPanel');
+      if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'caDebugPanel';
+        panel.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:9999;background:rgba(0,0,0,0.7);color:#fff;padding:8px 10px;border-radius:8px;font-size:12px;font-family:monospace;max-width:300px;';
+        document.body.appendChild(panel);
+      }
+
+      const caSeriesKeys = Object.keys(caCountySeriesCache || {}).join(', ') || '(none)';
+      const usAllKeys = Object.keys(usAllMonthlyCacheMap || {}).join(', ') || '(none)';
+      const stateKeys = Object.keys(stateMonthlyCache || {}).slice(0,5).join(', ') || '(none)';
+
+      panel.innerHTML = `field: <b>${selectedPlugsField}</b><br/>CA series: ${caSeriesKeys}<br/>US all keys: ${usAllKeys}<br/>state cache keys: ${stateKeys}`;
+    } catch (e) {
+      console.debug('updateCaDebugPanel failed', e);
+    }
+  }
+
+  // Ensure initial panel is present
+  updateCaDebugPanel();
 }
 
 /* Fetch every CA County_Summary row for a field and group it into per-county
@@ -1599,6 +1715,7 @@ async function fetchCACountyMonthlySeriesAll(fieldName) {
     byCounty
   };
   caCountySeriesCache[fieldName] = result;
+  try { if (typeof updateCaDebugPanel === 'function') updateCaDebugPanel(); } catch(e){}
   return result;
 }
 
@@ -1645,7 +1762,8 @@ async function renderCountyDeepDiveCharts(countyNames) {
   const cumCanvas = document.getElementById('caCountyPlugsCumulativeChart');
   const stationsGrowthCanvas = document.getElementById('caCountyStationsGrowthChart');
   const stationsCumCanvas = document.getElementById('caCountyStationsCumulativeChart');
-  if (!growthCanvas || !cumCanvas || !stationsGrowthCanvas || !stationsCumCanvas) return;
+  // The CA page may omit the station canvases; require the plugs canvases only.
+  if (!growthCanvas || !cumCanvas) return;
 
   if (!isStatewide) setCaCountySelection(counties);
   const scopeLabel = isStatewide ? 'California' : formatCaCountySelectionLabel(counties);
@@ -1656,8 +1774,8 @@ async function renderCountyDeepDiveCharts(countyNames) {
   const cumTitle = document.getElementById('caCountyPlugsCumulativeTitle');
   const stationsGrowthTitle = document.getElementById('caCountyStationsGrowthTitle');
   const stationsCumTitle = document.getElementById('caCountyStationsCumulativeTitle');
-  if (growthTitle) growthTitle.textContent = `Monthly Growth — Total Plugs (${scopeLabel}${yearLabel})`;
-  if (cumTitle) cumTitle.textContent = `Total Plugs — Cumulative (${scopeLabel}${yearLabel})`;
+  if (growthTitle) growthTitle.textContent = `Monthly Growth — ${plugsFieldLabel(selectedPlugsField)} (${scopeLabel}${yearLabel})`;
+  if (cumTitle) cumTitle.textContent = `${plugsFieldLabel(selectedPlugsField)} — Cumulative (${scopeLabel}${yearLabel})`;
   if (stationsGrowthTitle) stationsGrowthTitle.textContent = `Monthly Growth — Stations (${scopeLabel}${yearLabel})`;
   if (stationsCumTitle) stationsCumTitle.textContent = `Total Stations — Cumulative (${scopeLabel}${yearLabel})`;
 
@@ -1668,7 +1786,7 @@ async function renderCountyDeepDiveCharts(countyNames) {
 
   try {
     const [plugsSeries, stationsSeries] = await Promise.all([
-      fetchCACountyMonthlySeriesAll('total_all_plugs'),
+      fetchCACountyMonthlySeriesAll(selectedPlugsField || 'total_all_plugs'),
       fetchCACountyMonthlySeriesAll('total_stations')
     ]);
 
@@ -1792,7 +1910,8 @@ async function renderCountyDeepDiveCharts(countyNames) {
       }
     });
 
-    caCountyStationsGrowthInst = new Chart(stationsGrowthCanvas, {
+    if (stationsGrowthCanvas) {
+      caCountyStationsGrowthInst = new Chart(stationsGrowthCanvas, {
       type: 'line',
       data: {
         labels,
@@ -1810,9 +1929,11 @@ async function renderCountyDeepDiveCharts(countyNames) {
           y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { family: 'Space Grotesk' } }, beginAtZero: true }
         }
       }
-    });
+      });
+    }
 
-    caCountyStationsCumulativeInst = new Chart(stationsCumCanvas, {
+    if (stationsCumCanvas) {
+      caCountyStationsCumulativeInst = new Chart(stationsCumCanvas, {
       type: 'bar',
       data: {
         labels,
@@ -1830,7 +1951,9 @@ async function renderCountyDeepDiveCharts(countyNames) {
           y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { family: 'Space Grotesk' } }, beginAtZero: false }
         }
       }
-    });
+      });
+    }
+    try { if (typeof updateCaDebugPanel === 'function') updateCaDebugPanel(); } catch(e){}
   } catch (err) {
     console.error('renderCountyDeepDiveCharts error:', err);
     showLoader(growthWrap, 'County plug data unavailable.');
@@ -1840,66 +1963,106 @@ async function renderCountyDeepDiveCharts(countyNames) {
   }
 }
 
-async function renderCANetworkShareDonut() {
+async function renderCANetworkShareDonut(countyNames = []) {
   const canvas = document.getElementById('caNetworkShareChart');
   const wrapId = 'caNetworkShareWrap';
   const legend = document.getElementById('caNetworkShareLegend');
   if (!canvas) return;
 
-  showLoader(wrapId, 'Fetching California network share…');
+  const counties = (Array.isArray(countyNames) ? countyNames : [countyNames])
+    .filter(Boolean)
+    .map(getCaCountyDisplayName)
+    .filter(Boolean)
+    .slice(0, MAX_CA_COMPARE_COUNTIES);
+
+  const isStatewide = !counties.length;
+
+  showLoader(
+    wrapId,
+    isStatewide
+      ? 'Fetching California county network share…'
+      : `Fetching network share for ${formatCaCountySelectionLabel(counties)}…`
+  );
+
   if (legend) legend.innerHTML = '';
 
   try {
-    const latestQuery = new Parse.Query('EV_Network_State_Summary');
-    latestQuery.equalTo('state', 'CA');
-    latestQuery.select(['year_month']);
-    latestQuery.descending('year_month');
-    latestQuery.limit(1);
-    const latestRows = await latestQuery.find();
-    const latestYM = latestRows?.[0]?.get('year_month');
-    if (!latestYM) throw new Error('No California network data available.');
+    const latestYM = await fetchLatestYearMonthForNetworkCounty(counties);
+    if (!latestYM) throw new Error('No county network data available.');
 
-    const query = new Parse.Query('EV_Network_State_Summary');
-    query.equalTo('state', 'CA');
+    const plugsField = selectedPlugsField || 'total_all_plugs';
+    const query = new Parse.Query('EV_Network_CA_County');
+    if (counties.length) {
+      query.containedIn('county', counties);
+    }
     query.equalTo('year_month', latestYM);
-    query.select(['ev_network', 'total_all_plugs']);
+    query.select(['county', 'ev_network', plugsField]);
     query.limit(5000);
+
     const rows = await query.find();
 
     const isNonNetwork = n => /^non[-\s]?network/i.test(n);
     const normalizeNetworkName = n => (/^tesla(?:\s+destination)?$/i.test(n) ? 'Tesla' : n);
+
     const counts = {};
     rows.forEach(r => {
       const rawName = (r.get('ev_network') || '').trim() || 'Unknown';
       if (isNonNetwork(rawName)) return;
+
       const name = normalizeNetworkName(rawName);
-      const value = Number(r.get('total_all_plugs') || 0);
+      const value = Number(r.get(plugsField) || 0);
       if (value <= 0) return;
+
       counts[name] = (counts[name] || 0) + value;
     });
 
     const sortedAll = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-    const sorted = sortedAll.slice(0, 10);
+    if (!sortedAll.length) throw new Error('No county network share data available.');
+
+    const top = sortedAll.slice(0, 10);
     const other = sortedAll.slice(10).reduce((sum, [, value]) => sum + Number(value || 0), 0);
-    if (other > 0) sorted.push(['Other', other]);
-    if (!sorted.length) throw new Error('No California network plug totals available.');
+    if (other > 0) top.push(['Other', other]);
+
+    const total = top.reduce((sum, [, value]) => sum + Number(value || 0), 0);
+    const labels = top.map(([name]) => name);
+    const values = top.map(([, value]) => value);
 
     hideLoader(wrapId);
 
-    if (caNetworkShareInst) { try { caNetworkShareInst.destroy(); } catch (_) {} caNetworkShareInst = null; }
+    if (caNetworkShareInst) {
+      try { caNetworkShareInst.destroy(); } catch (_) {}
+      caNetworkShareInst = null;
+    }
 
-    const total = sorted.reduce((sum, [, value]) => sum + Number(value || 0), 0);
     const title = document.getElementById('caNetworkShareTitle');
     const subtitle = document.getElementById('caNetworkShareSubtitle');
-    if (title) title.textContent = `California EV Network Share (${formatYearMonth(latestYM)})`;
-    if (subtitle) subtitle.textContent = 'Filtered by state = CA using the latest month in EV_Network_State_Summary.';
+
+    if (title) {
+      if (isStatewide) {
+        title.textContent = `California County Network Share (${formatYearMonth(latestYM)})`;
+      } else if (counties.length === 1) {
+        title.textContent = `${counties[0]} County Network Share (${formatYearMonth(latestYM)})`;
+      } else {
+        title.textContent = `Combined County Network Share (${formatYearMonth(latestYM)})`;
+      }
+    }
+
+    if (subtitle) {
+      if (isStatewide) {
+        subtitle.textContent = 'California county-wide network mix using the latest month.';
+      } else if (counties.length === 1) {
+        subtitle.textContent = `Network mix for ${counties[0]} County using the latest month.`;
+      } else {
+        subtitle.textContent = `Combined network mix for ${counties.join(', ')} counties using the latest month.`;
+      }
+    }
 
     caNetworkShareInst = new Chart(canvas, {
       type: 'doughnut',
       data: {
-        labels: sorted.map(([name]) => name),
+        labels,
         datasets: [{
-          data: sorted.map(([, value]) => value),
+          data: values,
           backgroundColor: CHART_COLORS,
           borderColor: '#fff',
           borderWidth: 2
@@ -1925,7 +2088,7 @@ async function renderCANetworkShareDonut() {
     });
 
     if (legend) {
-      legend.innerHTML = sorted.map(([name, count], i) => {
+      legend.innerHTML = top.map(([name, count], i) => {
         const pct = total > 0 ? ((Number(count) / total) * 100).toFixed(1) : '0.0';
         return `<div class="legend-item" data-fullname="${name}">
           <span class="legend-dot" style="background:${CHART_COLORS[i % CHART_COLORS.length]}"></span>
@@ -1937,9 +2100,15 @@ async function renderCANetworkShareDonut() {
   } catch (err) {
     console.error('CA network share error:', err);
     hideLoader(wrapId);
+
     const loader = document.getElementById(wrapId)?.querySelector('.chart-loader');
-    if (loader) loader.textContent = err?.message || 'California network share data unavailable.';
+    if (loader) loader.textContent = err?.message || 'California county network share data unavailable.';
     if (legend) legend.innerHTML = '';
+
+    if (caNetworkShareInst) {
+      try { caNetworkShareInst.destroy(); } catch (_) {}
+      caNetworkShareInst = null;
+    }
   }
 }
 
@@ -1986,6 +2155,16 @@ async function renderCACountyColorMapByStations(limit = 10) {
     q.limit(5000);
 
     const countyRows = await q.find();
+
+    try {
+      console.debug(`[DEBUG] renderCACountyColorMapByStations latestYM=${ymLatest} countyRows=${countyRows.length}`);
+      if (countyRows && countyRows.length) {
+        const sampleCR = countyRows.slice(0,4).map(r => ({ county: r.get('county'), total_stations: Number(r.get('total_stations') || 0) }));
+        console.debug('[DEBUG] renderCACountyColorMapByStations sample:', sampleCR);
+      }
+    } catch (e) {
+      console.debug('[DEBUG] renderCACountyColorMapByStations logging failed', e);
+    }
 
     const countyVals = [];
     countyRows.forEach(r => {
@@ -2136,7 +2315,7 @@ async function loadStateDeepDive(state) {
     // NEW: render California county color map (stations) next to the hero chart
     if (state === 'CA') {
       await renderCACountyColorMapByStations(10);
-      await renderCANetworkShareDonut();
+      await renderCANetworkShareDonut(getSelectedCaCountyNames());
       await renderCATop10CountiesByStations();
     }
 
@@ -2590,9 +2769,12 @@ function hideUSPlugsLoader(wrapId) {
 }
 
 async function fetchStateMonthlyPlugsAndStationsByYearMonth(stateCode) {
+  // Respect currently selected plugs field for plugs series.
+  const plugsField = selectedPlugsField || 'total_all_plugs';
+
   if (stateCode === 'ALL') {
     const [plugsSeries, stationsSeries] = await Promise.all([
-      fetchUSMonthlyCumulativeSeriesUnfiltered('total_all_plugs'),
+      fetchUSMonthlyCumulativeSeriesUnfiltered(plugsField),
       fetchUSMonthlyCumulativeSeriesUnfiltered('total_stations')
     ]);
 
@@ -2611,7 +2793,7 @@ async function fetchStateMonthlyPlugsAndStationsByYearMonth(stateCode) {
   // Single state query returning both series aligned by year_month.
   const query = new Parse.Query('State_Summary');
   query.equalTo('state', stateCode);
-  query.select(['year_month', 'total_all_plugs', 'total_stations']);
+  query.select(['year_month', plugsField, 'total_stations']);
   query.limit(20000);
 
   const results = await query.find();
@@ -2623,7 +2805,7 @@ async function fetchStateMonthlyPlugsAndStationsByYearMonth(stateCode) {
     const ym = r.get('year_month');
     if (!ym) return;
     yearMonthsSet.add(ym);
-    plugsByYearMonth[ym] = Number(r.get('total_all_plugs') || 0);
+    plugsByYearMonth[ym] = Number(r.get(plugsField) || 0);
     stationsByYearMonth[ym] = Number(r.get('total_stations') || 0);
   });
 
@@ -2740,128 +2922,33 @@ async function renderUSTopNetworksAndCounties(stateCode, selectedYear) {
   const networksWrapId = 'usTopNetworksWrap';
   const countiesWrapId = 'usTopCountiesWrap';
 
-  const yearNum = Number(selectedYear);
   const isAllStates = stateCode === 'ALL';
   const scopeLabel = isAllStates ? 'All States' : US_STATES[stateCode];
+
   if (!networksCanvas && !countiesCanvas) return;
 
-  // Networks are NOT state-specific in EV_Network_Summary, so we compute for the latest month in the selected year.
-  let latestYM = null;
-  try {
-    const ymRows = await (async () => {
-      const q = new Parse.Query('EV_Network_Summary');
-      q.select(['year_month']);
-      q.limit(5000);
-      const rows = await q.find();
-      return rows.map(r => r.get('year_month')).filter(ym => ym && getYearFromYearMonth(ym) === yearNum);
-    })();
-
-    if (ymRows && ymRows.length) {
-      latestYM = ymRows.sort((a, b) => String(a).localeCompare(String(b)))[ymRows.length - 1];
-    }
-  } catch (_) {
-    latestYM = null;
-  }
-
-  // Fetch top networks for latestYM
+  // Network mix donut: latest available month for the selected state
   if (networksCanvas) {
-    showUSPlugsLoader(networksWrapId, 'Fetching top EV networks…');
-    try {
-      if (!latestYM) throw new Error('No network data available for the selected year.');
-
-      const q = new Parse.Query('EV_Network_Summary');
-      q.equalTo('year_month', latestYM);
-      q.select(['ev_network', 'total_all_plugs']);
-      q.limit(5000);
-      const rows = await q.find();
-
-      const isNonNetwork = n => /^non[-\s]?network/i.test(n);
-      const normalizeNetworkName = n => (/^tesla(?:\s+destination)?$/i.test(n) ? 'Tesla' : n);
-      const counts = {};
-      rows.forEach(r => {
-        const rawName = (r.get('ev_network') || '').trim() || 'Unknown';
-        if (isNonNetwork(rawName)) return;
-        const n = normalizeNetworkName(rawName);
-        const v = Number(r.get('total_all_plugs') || 0);
-        counts[n] = (counts[n] || 0) + v;
-      });
-
-      const sortedAll = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-      const sorted = sortedAll.slice(0, 10);
-      const other = sortedAll.slice(10).reduce((sum, [, value]) => sum + Number(value || 0), 0);
-      if (other > 0) sorted.push(['Other', other]);
-      if (!sorted.length) throw new Error('No EV network summary data available.');
-
-      hideUSPlugsLoader(networksWrapId);
-
-      if (usTopNetworksInst) { try { usTopNetworksInst.destroy(); } catch (_) {} usTopNetworksInst = null; }
-
-      const total = sorted.reduce((sum, [, value]) => sum + Number(value || 0), 0);
-      const title = document.getElementById('usTopNetworksTitle');
-      if (title) title.textContent = 'EV Network Share for the latest available month';
-
-      usTopNetworksInst = new Chart(networksCanvas, {
-        type: 'doughnut',
-        data: {
-          labels: sorted.map(([n]) => n),
-          datasets: [{
-            data: sorted.map(([, v]) => v),
-            backgroundColor: CHART_COLORS,
-            borderColor: '#fff',
-            borderWidth: 2
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          cutout: '62%',
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                label: tctx => {
-                  const value = Number(tctx?.parsed ?? tctx?.raw ?? 0);
-                  const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
-                  return ` ${value.toLocaleString()} plugs (${pct}%)`;
-                }
-              }
-            }
-          }
-        }
-      });
-
-      const legend = document.getElementById('usTopNetworksLegend');
-      if (legend) {
-        legend.innerHTML = sorted.map(([name, count], i) => {
-          const pct = total > 0 ? ((Number(count) / total) * 100).toFixed(1) : '0.0';
-          return `<div class="legend-item" data-fullname="${name}">
-            <span class="legend-dot" style="background:${CHART_COLORS[i % CHART_COLORS.length]}"></span>
-            <span class="legend-name" aria-label="${name}">${name}</span>
-            <span class="legend-count">${Number(count).toLocaleString()} plugs <small>(${pct}%)</small></span>
-          </div>`;
-        }).join('');
-      }
-    } catch (err) {
-      hideUSPlugsLoader(networksWrapId);
-      const loader = document.getElementById(networksWrapId)?.querySelector('.chart-loader');
-      if (loader) loader.textContent = err?.message ? err.message : 'Failed to load top networks.';
-      const legend = document.getElementById('usTopNetworksLegend');
-      if (legend) legend.innerHTML = '';
-    }
+    await renderUSNetworkMixDonut(stateCode);
   }
 
-  // Fetch top counties for the selected state (or nationally for All) + latestYM in selected year.
+  // Top counties (still uses County_Summary)
   if (countiesCanvas) {
     showUSPlugsLoader(countiesWrapId, 'Fetching top counties…');
     try {
-      const latestStateYM = isAllStates ? latestYM : await fetchLatestYearMonthForStateInYear(stateCode, selectedYear);
+      const latestStateYM = isAllStates
+        ? await fetchLatestYearMonth('County_Summary', 'year_month')
+        : await fetchLatestYearMonthForStateInYear(stateCode, selectedYear);
+
       if (!latestStateYM) throw new Error('No county data available for this state/year.');
 
+      const plugsField = selectedPlugsField || 'total_all_plugs';
       const q = new Parse.Query('County_Summary');
       if (!isAllStates) q.equalTo('state', stateCode);
       q.equalTo('year_month', latestStateYM);
-      q.select(['state', 'county', 'total_dc_fast_plugs']);
+      q.select(['state', 'county', plugsField]);
       q.limit(20000);
+
       const rows = await q.find();
 
       const counts = {};
@@ -2869,7 +2956,7 @@ async function renderUSTopNetworksAndCounties(stateCode, selectedYear) {
         const c = (r.get('county') || '').trim();
         if (!c) return;
         const label = isAllStates ? `${c}, ${r.get('state') || ''}`.trim() : c;
-        const v = Number(r.get('total_dc_fast_plugs') || 0);
+        const v = Number(r.get(plugsField) || 0);
         counts[label] = (counts[label] || 0) + v;
       });
 
@@ -2878,14 +2965,17 @@ async function renderUSTopNetworksAndCounties(stateCode, selectedYear) {
 
       hideUSPlugsLoader(countiesWrapId);
 
-      if (usTopCountiesInst) { try { usTopCountiesInst.destroy(); } catch (_) {} usTopCountiesInst = null; }
+      if (usTopCountiesInst) {
+        try { usTopCountiesInst.destroy(); } catch (_) {}
+        usTopCountiesInst = null;
+      }
 
       usTopCountiesInst = new Chart(countiesCanvas, {
         type: 'bar',
         data: {
           labels: sorted.map(([c]) => c),
           datasets: [{
-            label: `DC Fast Plugs (${scopeLabel}, ${selectedYear})`,
+            label: `${plugsFieldLabel(selectedPlugsField)} (${scopeLabel}, ${selectedYear})`,
             data: sorted.map(([, v]) => v),
             borderColor: CHART_COLORS[1],
             backgroundColor: `${CHART_COLORS[1]}55`,
@@ -3090,8 +3180,8 @@ async function renderUSPlugsCharts() {
       if (usStationsGrowthInst) { try { usStationsGrowthInst.destroy(); } catch (_) {} usStationsGrowthInst = null; }
       if (usStationsCumulativeInst) { try { usStationsCumulativeInst.destroy(); } catch (_) {} usStationsCumulativeInst = null; }
 
-      if (titleGrowth) titleGrowth.textContent = `Monthly Growth — Total Plugs (${scopeLabel}, ${selectedYear})`;
-      if (titleCum) titleCum.textContent = `Total Plugs — Cumulative (${scopeLabel}, ${selectedYear})`;
+      if (titleGrowth) titleGrowth.textContent = `Monthly Growth — ${plugsFieldLabel(selectedPlugsField)} (${scopeLabel}, ${selectedYear})`;
+      if (titleCum) titleCum.textContent = `${plugsFieldLabel(selectedPlugsField)} — Cumulative (${scopeLabel}, ${selectedYear})`;
       if (titleStationsGrowth) titleStationsGrowth.textContent = `Monthly Growth — Total Stations (${scopeLabel}, ${selectedYear})`;
       if (titleStationsCum) titleStationsCum.textContent = `Total Stations — Cumulative (${scopeLabel}, ${selectedYear})`;
 
@@ -3202,9 +3292,316 @@ async function renderUSPlugsCharts() {
   }
 
   // Network-share card under the monthly charts.
-  await renderUSTopNetworksAndCounties(isAllStates ? 'ALL' : selectedStates[0], selectedYear);
+  await renderUSTopNetworksAndCounties(selectedStates, selectedYear);
 }
 
+let caPlugsPer1000Chart = null;
+let caEvsPerPlugChart = null;
+
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+async function loadCaliforniaRatioCharts() {
+  if (typeof Parse === "undefined") return;
+
+  const query = new Parse.Query("County_Plug_EV_Metrics");
+  query.limit(10000);
+
+  const rows = await query.find();
+
+  // Build yearly totals for 2014–2025
+  const yearTotals = {};
+  for (let year = 2014; year <= 2025; year++) {
+    yearTotals[year] = { plugs: 0, evs: 0 };
+  }
+
+  rows.forEach((row) => {
+    const year = Number(row.get("year"));
+    if (year < 2014 || year > 2025) return;
+
+    const plugs = toNumber(row.get("total_all_plugs"));
+    const evs = toNumber(row.get("cumulative_total_electric_phev"));
+
+    yearTotals[year].plugs += plugs;
+    yearTotals[year].evs += evs;
+  });
+
+  const labels = [];
+  const plugsPer1000Data = [];
+  const evsPerPlugData = [];
+
+  for (let year = 2014; year <= 2025; year++) {
+    const totals = yearTotals[year];
+    labels.push(String(year));
+
+    const plugsPer1000 = totals.evs > 0 ? (totals.plugs / totals.evs) * 1000 : null;
+    const evsPerPlug = totals.plugs > 0 ? (totals.evs / totals.plugs) : null;
+
+    plugsPer1000Data.push(plugsPer1000);
+    evsPerPlugData.push(evsPerPlug);
+  }
+
+  // Chart 1: plugs per 1000 EVs
+  const plugsCtx = document.getElementById("caPlugsPer1000Chart")?.getContext("2d");
+  if (plugsCtx) {
+    if (caPlugsPer1000Chart) caPlugsPer1000Chart.destroy();
+
+    caPlugsPer1000Chart = new Chart(plugsCtx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "Plugs per 1,000 EVs",
+          data: plugsPer1000Data,
+          borderColor: "#1d6fc4",
+          backgroundColor: "rgba(29, 111, 196, 0.12)",
+          pointBackgroundColor: "#1d6fc4",
+          pointBorderColor: "#ffffff",
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 3,
+          tension: 0.3,
+          fill: true,
+          spanGaps: true
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true }
+        },
+        scales: {
+          x: {
+            grid: { color: "rgba(12, 42, 77, 0.06)" }
+          },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: (value) => Number(value).toLocaleString()
+            },
+            grid: { color: "rgba(12, 42, 77, 0.08)" }
+          }
+        }
+      }
+    });
+  }
+
+  // Chart 2: EVs per plug
+  const evsCtx = document.getElementById("caEvsPerPlugChart")?.getContext("2d");
+  if (evsCtx) {
+    if (caEvsPerPlugChart) caEvsPerPlugChart.destroy();
+
+    caEvsPerPlugChart = new Chart(evsCtx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "EVs per Plug",
+          data: evsPerPlugData,
+          borderColor: "#f28c28",
+          backgroundColor: "rgba(242, 140, 40, 0.12)",
+          pointBackgroundColor: "#f28c28",
+          pointBorderColor: "#ffffff",
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 3,
+          tension: 0.3,
+          fill: true,
+          spanGaps: true
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true }
+        },
+        scales: {
+          x: {
+            grid: { color: "rgba(12, 42, 77, 0.06)" }
+          },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: (value) => Number(value).toFixed(2)
+            },
+            grid: { color: "rgba(12, 42, 77, 0.08)" }
+          }
+        }
+      }
+    });
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadCaliforniaRatioCharts().catch(console.error);
+});
+async function fetchLatestYearMonthForNetworkStates(stateCodes = []) {
+  const codes = Array.isArray(stateCodes)
+    ? stateCodes.filter(Boolean)
+    : [stateCodes].filter(Boolean);
+
+  const query = new Parse.Query('EV_Network_State_Summary');
+
+  if (codes.length && !codes.includes('ALL')) {
+    query.containedIn('state', codes);
+  }
+
+  query.select(['year_month']);
+  query.descending('year_month');
+  query.limit(1);
+
+  const rows = await query.find();
+  return rows?.[0]?.get('year_month') || null;
+}
+async function renderUSNetworkMixDonut(stateCodes) {
+  const wrapId = 'usTopNetworksWrap';
+  const canvas = document.getElementById('usTopNetworksChart');
+  const legend = document.getElementById('usTopNetworksLegend');
+
+  if (!canvas) return;
+
+  const codes = Array.isArray(stateCodes)
+    ? stateCodes.filter(Boolean)
+    : [stateCodes].filter(Boolean);
+
+  const isAll = !codes.length || codes.includes('ALL');
+  const scopeCodes = isAll ? ['ALL'] : codes.slice(0, MAX_US_COMPARE_STATES);
+
+  const scopeLabel = isAll
+    ? 'All States'
+    : scopeCodes.length === 1
+      ? (US_STATES[scopeCodes[0]] || scopeCodes[0])
+      : scopeCodes.map(c => US_STATES[c] || c).join(', ');
+
+  showUSPlugsLoader(wrapId, `Fetching ${scopeLabel} network mix…`);
+  if (legend) legend.innerHTML = '';
+
+  try {
+    const latestYM = await fetchLatestYearMonthForNetworkStates(scopeCodes);
+    if (!latestYM) throw new Error(`No network mix data available for ${scopeLabel}.`);
+
+    const plugsField = selectedPlugsField || 'total_all_plugs';
+    const query = new Parse.Query('EV_Network_State_Summary');
+    if (!isAll) {
+      query.containedIn('state', scopeCodes);
+    }
+    query.equalTo('year_month', latestYM);
+    query.select(['ev_network', plugsField]);
+    query.limit(5000);
+
+    const rows = await query.find();
+
+    const isNonNetwork = n => /^non[-\s]?network/i.test(n);
+    const normalizeNetworkName = n => (/^tesla(?:\s+destination)?$/i.test(n) ? 'Tesla' : n);
+
+    const counts = {};
+    rows.forEach(r => {
+      const rawName = (r.get('ev_network') || '').trim() || 'Unknown';
+      if (isNonNetwork(rawName)) return;
+
+      const name = normalizeNetworkName(rawName);
+      const value = Number(r.get(plugsField) || 0);
+      if (value <= 0) return;
+
+      counts[name] = (counts[name] || 0) + value;
+    });
+
+    const sortedAll = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    if (!sortedAll.length) throw new Error(`No network mix data found for ${scopeLabel}.`);
+
+    const top = sortedAll.slice(0, 10);
+    const other = sortedAll.slice(10).reduce((sum, [, value]) => sum + Number(value || 0), 0);
+    if (other > 0) top.push(['Other', other]);
+
+    const total = top.reduce((sum, [, value]) => sum + Number(value || 0), 0);
+    const labels = top.map(([name]) => name);
+    const values = top.map(([, value]) => value);
+
+    hideUSPlugsLoader(wrapId);
+
+    if (usTopNetworksInst) {
+      try { usTopNetworksInst.destroy(); } catch (_) {}
+      usTopNetworksInst = null;
+    }
+
+    const title = document.getElementById('usTopNetworksTitle');
+    const subtitle = document.getElementById('usTopNetworksSubtitle');
+
+    if (title) {
+      title.textContent = `${scopeLabel} Network Mix (${formatYearMonth(latestYM)})`;
+    }
+
+    if (subtitle) {
+      if (isAll) {
+        subtitle.textContent = `Network mix for ${scopeLabel}`;
+      } else if (scopeCodes.length === 1) {
+        subtitle.textContent = `Network mix for ${scopeLabel}`;
+      } else {
+        subtitle.textContent = `Combined network mix for ${scopeCodes.join(', ')}`;
+      }
+    }
+
+    usTopNetworksInst = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: CHART_COLORS,
+          borderColor: '#fff',
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: tctx => {
+                const value = Number(tctx?.parsed ?? tctx?.raw ?? 0);
+                const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                return ` ${value.toLocaleString()} plugs (${pct}%)`;
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (legend) {
+      legend.innerHTML = top.map(([name, count], i) => {
+        const pct = total > 0 ? ((Number(count) / total) * 100).toFixed(1) : '0.0';
+        return `<div class="legend-item" data-fullname="${name}">
+          <span class="legend-dot" style="background:${CHART_COLORS[i % CHART_COLORS.length]}"></span>
+          <span class="legend-name" aria-label="${name}">${name}</span>
+          <span class="legend-count">${Number(count).toLocaleString()} plugs <small>(${pct}%)</small></span>
+        </div>`;
+      }).join('');
+    }
+  } catch (err) {
+    console.error('US network mix donut error:', err);
+
+    const msg = (err && err.message)
+      ? `Network mix unavailable: ${err.message}`
+      : 'Network mix unavailable.';
+
+    showUSPlugsLoader(wrapId, msg);
+    if (legend) legend.innerHTML = '';
+
+    if (usTopNetworksInst) {
+      try { usTopNetworksInst.destroy(); } catch (_) {}
+      usTopNetworksInst = null;
+    }
+  }
+}
 /* -------------------------------------------------------
    US MAP CHOROPLETH — color states by total station count
    Darker blue = more stations. Drives the --choro-fill CSS
@@ -3497,6 +3894,23 @@ async function initUSPlugsAnalysisPage() {
   }
   stateSelectEl.addEventListener('change', schedule);
   yearSelectEl.addEventListener('change', schedule);
+
+  // Plugs type selector (All / DC Fast / Level 2)
+  const typeSelectEl = document.getElementById('usPlugsTypeSelect');
+  if (typeSelectEl) {
+    typeSelectEl.value = selectedPlugsField;
+    typeSelectEl.addEventListener('change', () => {
+      const prev = selectedPlugsField;
+      selectedPlugsField = typeSelectEl.value || 'total_all_plugs';
+      console.debug('[DEBUG] US plugs type changed', { from: prev, to: selectedPlugsField });
+      // Clear caches that depend on plugs field so fresh queries run
+      try { Object.keys(stateMonthlyCache).forEach(k => delete stateMonthlyCache[k]); } catch (e) {}
+      try { Object.keys(usAllMonthlyCacheMap).forEach(k => delete usAllMonthlyCacheMap[k]); } catch (e) {}
+      try { Object.keys(caCountySeriesCache).forEach(k => delete caCountySeriesCache[k]); } catch (e) {}
+      // re-render charts with new metric
+      schedule();
+    });
+  }
 
   // 2) Load the year list + initial charts as soon as the SDK is available.
   // Parse.Query is enough for these read-only summary tables; waiting for
