@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Evasta — California Deep Dive</title>
+
+  <!-- GLOBAL CSS -->
+  <link rel="icon" type="image/png" href="images/evasta_logo.png">
+  <link rel="apple-touch-icon" href="images/evasta_logo.png">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- MAPBOX -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+
+  <!-- CHART.JS -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- PARSE SDK -->
+  <script src="https://npmcdn.com/parse/dist/parse.min.js"></script>
+
+  <!-- PAGE-SCOPED STYLES (California county choropleth — same color scheme as the US states map) -->
+  <style>
+    .ca-county-path {
+      fill: var(--choro-fill, rgba(29, 111, 196, 0.12));
+      stroke: #ffffff;
+      stroke-width: 0.6;
+      stroke-linejoin: round;
+      cursor: pointer;
+      transition: filter .14s ease;
+    }
+    .ca-county-path:hover { filter: brightness(0.85); }
+    .ca-county-path.is-selected {
+      fill: #f28c28;
+      stroke: var(--ocean, #0c2a4d);
+      stroke-width: 1.6;
+      filter: brightness(0.98);
+    }
+
+    .ca-county-label {
+      fill: #0c2a4d;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      pointer-events: none;
+      paint-order: stroke;
+      stroke: rgba(255, 255, 255, 0.85);
+      stroke-width: 1.6px;
+      stroke-linejoin: round;
+    }
+    .ca-county-label.is-selected { fill: #b65500; }
+
+    #caCountyMapSvg { width: 100%; height: auto; display: block; }
+
+    #caCountyColorLegend {
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: var(--ink-soft);
+    }
+    #caCountyColorLegend .legend-title {
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--ocean);
+      font-size: 11px;
+    }
+    #caCountyColorLegend .legend-steps { display: flex; align-items: stretch; flex-wrap: wrap; }
+    #caCountyColorLegend .legend-step { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    #caCountyColorLegend .legend-swatch {
+      width: 38px;
+      height: 12px;
+      display: block;
+      border: 1px solid rgba(12, 42, 77, 0.12);
+    }
+    #caCountyColorLegend .legend-step:not(:last-child) .legend-swatch { border-right: none; }
+    #caCountyColorLegend .legend-range { font-size: 10px; line-height: 1; white-space: nowrap; }
+
+    .ca-controls {
+      display: flex;
+      gap: 14px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .ca-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: rgba(255, 255, 255, 0.9); }
+    .ca-field select {
+      padding: 11px 13px;
+      border-radius: 12px;
+      border: 1px solid rgba(12, 42, 77, 0.16);
+      background: #fff;
+      font-family: inherit;
+      font-size: 15px;
+      color: var(--ink);
+      min-width: 180px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .ca-field select[multiple] {
+      min-height: 128px;
+      min-width: 230px;
+      padding: 8px;
+    }
+    .ca-field select:focus {
+      outline: none;
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(29, 111, 196, 0.18);
+    }
+    .ca-apply-btn {
+      min-height: 44px;
+      padding: 0 22px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      background: var(--cyan);
+      color: #07182e;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+      transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+    }
+    .ca-apply-btn:hover {
+      background: #66d8ec;
+      transform: translateY(-1px);
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22);
+    }
+    .ca-apply-btn:focus {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(52, 197, 226, 0.26), 0 12px 26px rgba(0, 0, 0, 0.22);
+    }
+    .ca-reset-btn {
+      min-height: 44px;
+      padding: 0 20px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.34);
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .15s ease, border-color .15s ease, background .15s ease;
+    }
+    .ca-reset-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      border-color: rgba(255, 255, 255, 0.52);
+      transform: translateY(-1px);
+    }
+    .ca-reset-btn:focus {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22);
+    }
+    #caCountySelectedNote {
+      color: rgba(255, 255, 255, 0.86) !important;
+    }
+
+    .ca-charts-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    @media (max-width: 1080px) {
+      .ca-charts-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- LOGO -->
+  <div class="text-logo">
+    <img class="brand-logo" src="images/evasta_logo.png" alt="Evasta logo">
+  </div>
+
+  <!-- NAVIGATION -->
+  <nav>
+    <a class="nav-home" href="index.html" aria-label="Return to homepage">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
+      Home
+    </a>
+    <a id="navMap" href="california-deep-dive.html">California Deep Dive</a>
+    <a id="navFastMap" href="fastchargingstationmap_test.html">Fast Charging Map</a>
+    <a id="navResources" href="resources.html">Resources</a>
+    <a id="navAbout" href="about.html">About</a>
+  </nav>
+
+  <!-- HOME SCREEN -->
+  <div id="homeScreen" class="screen active">
+    <main class="landing">
+
+      <!-- HERO -->
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="hero-eyebrow">California Deep Dive</p>
+          <h1 id="hero-title" class="hero-title">EV charging analytics across California.</h1>
+          <p class="hero-lede">Choose counties and a year to compare month-by-month plug and station growth.</p>
+
+          <div class="stat-row hero-stat-row" id="heroStatRow">
+            <div class="stat-card">
+              <div class="stat-value" id="totalCAStations">—</div>
+              <div class="stat-label" id="totalCAStationsLabel">Total CA Stations</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="totalCACities">—</div>
+              <div class="stat-label" id="totalCAPlugsLabel">Total CA Plugs</div>
+            </div>
+          </div>
+
+          <!-- Controls -->
+          <div class="ca-controls">
+            <label class="ca-field">
+              Year
+              <select id="caYearSelect">
+                <option value="2026">2026</option>
+              </select>
+            </label>
+            <label class="ca-field">
+              Plugs Type
+              <select id="caPlugsTypeSelect">
+                <option value="total_all_plugs">All plugs</option>
+                <option value="total_dc_fast_plugs">DC Fast plugs</option>
+                <option value="total_level2_plugs">Level 2 plugs</option>
+              </select>
+            </label>
+            <button type="button" class="ca-apply-btn" id="caYearApplyBtn">Apply</button>
+            <button type="button" class="ca-reset-btn" id="caYearResetBtn">Reset</button>
+          </div>
+
+          <p id="caCountySelectedNote" style="margin-top:8px; font-size:12px; color:var(--ink-soft);">
+            California totals are shown until counties are clicked. Selected counties are shown in orange.
+          </p>
+        </div>
+
+        <div class="hero-visual" style="display:grid; grid-template-columns: minmax(0,1fr); gap:18px; align-items:start;">
+          <figure class="hero-network-card" style="margin:0; padding: 0; overflow:hidden; max-width:none;">
+            <figcaption class="hero-network-card__title" style="padding: 14px 18px 0;">
+              California Counties — Charging Stations (Colored Coverage)
+            </figcaption>
+            <div class="hero-network-card__body" style="padding: 12px 18px 18px; display:block;">
+              <div class="chart-loader" id="caCountyColorMapLoader">Loading California county coverage&hellip;</div>
+
+              <div id="caCountyColorMapWrap" style="display:flex; flex-direction:column; gap:8px;">
+                <svg id="caCountyMapSvg"
+                     viewBox="0 0 469 540"
+                     style="width:100%; height:auto; max-height:78vh; display:block; margin:0 auto; border-radius:14px; background:rgba(238,244,251,0.75);">
+                </svg>
+
+                <div id="caCountyColorLegend" style="margin-top:2px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:center;"></div>
+
+                <div class="us-map-hint" style="margin-top:0;">
+                  Click counties to compare. Click again to remove a county.
+                </div>
+              </div>
+            </div>
+          </figure>
+        </div>
+      </section>
+
+      <!-- CALIFORNIA ANALYTICS -->
+      <section class="section-shell analytics-section" id="california-analytics">
+        <div class="section-heading">
+          <p class="section-eyebrow">California Data Analysis</p>
+          <h2>County-level & network insights</h2>
+          <p>Explore CA station totals, monthly trends, and county-level plug and station growth.</p>
+        </div>
+
+        <!-- County comparison charts -->
+        <div class="ca-charts-grid" style="margin-top: 18px;">
+          <div class="chart-panel">
+            <div class="chart-header">
+              <h3 id="caCountyPlugsCumulativeTitle">Total Plugs — Cumulative</h3>
+              <p>Cumulative plug totals for the selected counties.</p>
+            </div>
+            <div class="chart-wrap" id="caCountyPlugsCumulativeWrap" style="height:320px;">
+              <div class="chart-loader">Loading county plug totals&hellip;</div>
+              <canvas id="caCountyPlugsCumulativeChart"></canvas>
+            </div>
+          </div>
+
+          <div class="chart-panel">
+            <div class="chart-header">
+              <h3 id="caCountyMonthlyGrowthTitle">Monthly Growth — Total Plugs</h3>
+              <p>Month-over-month plug additions derived from cumulative county totals.</p>
+            </div>
+            <div class="chart-wrap" id="caCountyPlugsGrowthWrap" style="height:320px;">
+              <div class="chart-loader">Loading county plug growth&hellip;</div>
+              <canvas id="caCountyPlugsGrowthChart"></canvas>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+	  
+	  <section class="section-shell analytics-section" id="california-ratio-charts">
+		<div class="section-heading">
+		<p class="section-eyebrow">California EV Efficiency Ratios</p>
+		<h2>Plugs per 1,000 EVs and EVs per plug</h2>
+		<p>Statewide yearly trends aggregated from county-level Back4App data, 2014–2025.</p>
+		</div>
+
+		<div class="ca-charts-grid" style="margin-top: 18px;">
+			<div class="chart-panel">
+			<div class="chart-header">
+			<h3>Plugs per 1,000 EVs</h3>
+			<p>Calculated from total plugs divided by EVs, statewide.</p>
+		</div>
+		<div class="chart-wrap" style="height:320px;">
+			<canvas id="caPlugsPer1000Chart"></canvas>
+		</div>
+		</div>
+
+		<div class="chart-panel">
+			<div class="chart-header">
+			<h3>EVs per Plug</h3>
+			<p>Calculated from EVs divided by total plugs, statewide.</p>
+		</div>
+		<div class="chart-wrap" style="height:320px;">
+			<canvas id="caEvsPerPlugChart"></canvas>
+		</div>
+		</div>
+		</div>
+	</section>
+
+      <section class="section-shell analytics-section" id="california-network-share">
+        <div class="section-heading">
+          <p class="section-eyebrow">California EV Network Share</p>
+          <h2>Network mix for the latest available month</h2>
+          <p>See how California plugs are distributed by charging network using the latest state-level network summary.</p>
+        </div>
+
+        <div class="chart-panel" style="margin-top: 18px;">
+          <div class="chart-header">
+            <h3 id="caNetworkShareTitle">California EV Network Share</h3>
+            <p id="caNetworkShareSubtitle">Filtered to California and the latest available month.</p>
+          </div>
+          <div class="chart-two-col">
+            <div class="chart-wrap chart-wrap--donut" id="caNetworkShareWrap">
+              <div class="chart-loader">Loading California network share&hellip;</div>
+              <canvas id="caNetworkShareChart"></canvas>
+            </div>
+            <div class="network-legend" id="caNetworkShareLegend" aria-label="California EV network share legend"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-shell analytics-section" id="california-county-leaderboard">
+        <div class="section-heading">
+          <p class="section-eyebrow">California County Leaderboard</p>
+          <h2>Top 10 counties by charging stations</h2>
+          <p>Ranked by total charging stations in the latest available county summary.</p>
+        </div>
+
+        <div class="chart-panel" style="margin-top: 18px;">
+          <div class="chart-header">
+            <h3 id="caTopCountiesStationsTitle">Top 10 California Counties</h3>
+            <p id="caTopCountiesStationsSubtitle">Filtered to California and the latest available month.</p>
+          </div>
+          <div class="chart-wrap" id="caTopCountiesStationsWrap" style="height:360px;">
+            <div class="chart-loader">Loading California county leaderboard&hellip;</div>
+            <canvas id="caTopCountiesStationsChart"></canvas>
+          </div>
+        </div>
+      </section>
+
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="brand-mark" aria-hidden="true">
+            <img src="images/evasta_logo.png" alt="Evasta logo">
+          </span>
+          <div>
+            <div class="footer-name">Evasta</div>
+            <p class="footer-tagline">EV charging infrastructure analytics across America.</p>
+          </div>
+        </div>
+        <nav class="footer-links" aria-label="Footer">
+          <a id="footerMap">Station Insights</a>
+          <a href="fastchargingstationmap_test.html">Fast Charging Map</a>
+          <a id="footerAnalytics">Data Analysis</a>
+          <a href="resources.html">Resources</a>
+          <a id="footerAbout">About</a>
+        </nav>
+      </div>
+      <div class="footer-bottom">
+        <span>&copy; 2026 Evasta. All rights reserved.</span>
+        <span>Public EV DC infrastructure</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- US geo paths (used for CA outline rendering) -->
+  <script src="js/us-states-geo.js"></script>
+
+  <!-- CA county geo paths (embedded geometry for the county choropleth) -->
+  <script src="js/ca-counties-geo.js"></script>
+
+  <!-- JS FILES -->
+  <script src="js/parse-init.js"></script>
+  <script src="js/analytics.js"></script>
+  <!-- AI Chatbot Widget -->
+  <script src="js/chatbot.js"></script>
+  <script>
+    if (!globalThis.crypto) globalThis.crypto = {};
+    if (typeof globalThis.crypto.randomUUID !== "function") {
+      globalThis.crypto.randomUUID = function () {
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+          const r = Math.random() * 16 | 0;
+          const v = c === "x" ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+      };
+    }
+  </script>
+
+</body>
+</html>
