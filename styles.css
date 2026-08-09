@@ -116,6 +116,19 @@ nav a {
   opacity: 0.92;
 }
 
+/* Home link — house icon + label, sits with the primary nav actions */
+nav a.nav-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+nav a.nav-home svg {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
 nav a::after {
   content: "";
   position: absolute;
@@ -1102,6 +1115,21 @@ nav a#navLogin:hover {
     width: auto;
   }
 
+  /* Stack controls and make selects full width on small devices */
+  .us-controls, .ca-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .us-field select, .ca-field select, select {
+    min-width: 100% !important;
+    width: 100% !important;
+  }
+  .btn, .ca-apply-btn, .ca-reset-btn {
+    width: 100% !important;
+  }
+  .chart-wrap { min-height: 220px !important; }
+  nav a.nav-home { display: none; }
+
   .hero {
     padding: 110px 30px 40px;
   }
@@ -1284,19 +1312,25 @@ nav a#navLogin:hover {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
+
+  /* subtle branded wash behind the inner card */
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(29, 111, 196, 0.10), transparent 38%),
+    radial-gradient(circle at 85% 25%, rgba(52, 197, 226, 0.11), transparent 40%),
+    radial-gradient(circle at 55% 90%, rgba(12, 42, 77, 0.08), transparent 38%);
 }
 
 .global-loading-inner {
   width: min(520px, 92vw);
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   border: 1px solid rgba(16, 19, 26, 0.10);
   border-radius: 22px;
   box-shadow: var(--shadow);
@@ -1305,12 +1339,13 @@ nav a#navLogin:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .global-loading-text {
-  font-weight: 700;
+  font-weight: 750;
   color: var(--ink-soft);
+  letter-spacing: 0.2px;
 }
 
 .global-loading-overlay .chart-loader {
@@ -1318,6 +1353,33 @@ nav a#navLogin:hover {
   min-height: 0;
   height: auto;
   padding: 0;
+}
+
+/* Make all chart loaders look cleaner & more "product" like */
+.chart-loader {
+  text-align: center;
+}
+
+/* Replace the old ⚡ icon with a simple check-like glyph (still centered) */
+.chart-loader::after {
+  content: "";
+  display: none;
+}
+
+/* Branded spinner ring (gradient) */
+.chart-loader::before {
+  border: 4px solid rgba(29, 111, 196, 0.14);
+  border-top-color: var(--ocean);
+  border-right-color: var(--cyan);
+  border-left-color: rgba(29, 111, 196, 0.18);
+  width: 44px;
+  height: 44px;
+}
+
+/* Slightly softer animation to feel premium */
+@keyframes evastaSpin {
+  from { transform: translate(-50%, -50%) rotate(0deg); opacity: 0.92; }
+  to   { transform: translate(-50%, -50%) rotate(360deg); opacity: 1; }
 }
 
 /* -------------------------------------------------------
@@ -1730,7 +1792,7 @@ nav a#navLogin:hover {
 .site-footer {
   position: relative;
   z-index: 1;
-  margin-top: 56px;
+  margin-top: 0;
   padding: 48px clamp(16px, 6vw, 80px) 28px;
   background: rgba(16, 19, 26, 0.97);
   color: rgba(255, 255, 255, 0.86);
@@ -1824,7 +1886,7 @@ nav a#navLogin:hover {
 
 @media (max-width: 600px) {
   .site-footer {
-    margin-top: 40px;
+    margin-top: 0;
     padding: 36px 18px 22px;
   }
 
