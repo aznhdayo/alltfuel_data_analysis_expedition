@@ -1,7 +1,12 @@
 /* =========================================================================
-   Evasta Assistant widget — floating, resizable assistant widget
+   Evasta Assistant widget — floating, resizable, interactive AI assistant.
    Self-contained: injects its own styles and markup, so it can be dropped
    onto any page with a single <script src="js/chatbot.js"></script> tag.
+
+   Talks to the Netlify Function at /api/chat (Netlify AI Gateway), which
+   grounds the assistant in the About page + site navigation and streams the
+   reply back token-by-token. Falls back to a lightweight offline guide if the
+   endpoint is unreachable.
    ========================================================================= */
 (function () {
   "use strict";
@@ -11,7 +16,8 @@
 
   var MIN_W = 320, MIN_H = 420;
   var STORE_KEY = "evastaChatSize";
-  var HISTORY_MAX = 10;
+  var HISTORY_MAX = 12;
+  var API_URL = "/api/chat";
 
   /* ----------------------------- Styles ---------------------------------- */
   var css = `
@@ -45,7 +51,7 @@
     bottom: 24px;
     right: 24px;
     width: 380px;
-    height: 540px;
+    height: 560px;
     max-width: calc(100vw - 32px);
     max-height: calc(100vh - 48px);
     background: #ffffff;
@@ -96,9 +102,29 @@
     gap: 10px;
     scrollbar-width: thin;
   }
-  .evasta-msg { max-width: 82%; padding: 10px 13px; border-radius: 14px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+  .evasta-msg { max-width: 86%; padding: 10px 13px; border-radius: 14px; font-size: 14px; line-height: 1.5; word-break: break-word; }
   .evasta-msg.bot { align-self: flex-start; background: #fff; color: #1e293b; border: 1px solid #e6e9f2; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(15,23,42,.05); }
   .evasta-msg.user { align-self: flex-end; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; border-bottom-right-radius: 4px; }
+  .evasta-msg p { margin: 0 0 8px; }
+  .evasta-msg p:last-child { margin-bottom: 0; }
+  .evasta-msg ul { margin: 6px 0; padding-left: 18px; }
+  .evasta-msg li { margin: 2px 0; }
+  .evasta-msg a.evasta-link {
+    color: #1d4ed8; font-weight: 600; text-decoration: none;
+    border-bottom: 1px solid rgba(29,78,216,.35);
+  }
+  .evasta-msg a.evasta-link:hover { border-bottom-color: #1d4ed8; }
+  .evasta-msg.user a.evasta-link { color: #fff; border-bottom-color: rgba(255,255,255,.6); }
+  .evasta-cursor { display: inline-block; width: 7px; height: 14px; margin-left: 1px; background: #2563eb; border-radius: 1px; vertical-align: -2px; animation: evastaBlink 1s steps(2) infinite; }
+  @keyframes evastaBlink { 50% { opacity: 0; } }
+
+  .evasta-suggestions { display: flex; flex-wrap: wrap; gap: 8px; align-self: flex-start; max-width: 100%; margin-top: 2px; }
+  .evasta-chip {
+    border: 1px solid #c9d4f2; background: #fff; color: #1d4ed8;
+    border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; transition: background .15s ease, transform .1s ease;
+  }
+  .evasta-chip:hover { background: #eef3ff; transform: translateY(-1px); }
 
   .evasta-typing { align-self: flex-start; display: inline-flex; gap: 4px; padding: 12px 14px; background: #fff; border: 1px solid #e6e9f2; border-radius: 14px; border-bottom-left-radius: 4px; }
   .evasta-typing span { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; animation: evastaBounce 1.2s infinite ease-in-out; }
@@ -156,13 +182,13 @@
         <span class="evasta-avatar" aria-hidden="true">⚡</span>
         <div>
           <div class="evasta-title">Evasta Assistant</div>
-          <div class="evasta-sub"><span class="evasta-dot"></span> AI for navigation + About context</div>
+          <div class="evasta-sub"><span class="evasta-dot"></span> Ask me anything about the site</div>
         </div>
         <button id="evastaChatClose" type="button" aria-label="Close chat">&times;</button>
       </header>
       <div id="evastaChatMessages" aria-live="polite"></div>
       <div id="evastaChatInputArea">
-        <textarea id="evastaChatInput" rows="1" placeholder="Ask about Evasta or the site…" aria-label="Type your message"></textarea>
+        <textarea id="evastaChatInput" rows="1" placeholder="Ask about EV charging data or where to find it…" aria-label="Type your message"></textarea>
         <button id="evastaChatSend" type="button" aria-label="Send message">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -181,21 +207,22 @@
   var sendBtn = root.querySelector("#evastaChatSend");
   var resizeHandle = root.querySelector("#evastaChatResize");
 
-  var PAGE_MAP = {
-    home: "index.html",
-    california: "california-deep-dive.html",
-    texas: "texas-deep-dive.html",
-    resources: "resources.html",
-    about: "about.html",
-    map: "fastchargingstationmap_test.html"
+  // Human-friendly labels for the pages the assistant can link to.
+  var PAGE_LABELS = {
+    "index.html": "US Overview",
+    "us-data-analysis.html": "US Data Analysis",
+    "california-deep-dive.html": "California Deep Dive",
+    "texas-deep-dive.html": "Texas Deep Dive",
+    "resources.html": "Resources & Downloads",
+    "fastchargingstationmap_test.html": "Station Map",
+    "about.html": "About Evasta"
   };
 
-  var ABOUT_SNIPPETS = [
-    "Mission: turn raw federal EV charging data into practical, planning-focused insights.",
-    "Who it’s for: counties/regional planners, Clean Cities Coalitions, state energy offices, researchers, EV companies, analysts, journalists, and civic data advocates.",
-    "What it covers: state-level summaries, network/operator comparisons, plug and station trends, California county analytics, and month-over-month tracking.",
-    "Data source/disclaimer: uses public U.S. DOE AFDC data; not affiliated with DOE/AFDC. For county-level California context, it references a public CA ZIP-to-County reference from UnitedStatesZipCodes.org.",
-    "How to use: pick the page that matches your question (US overview, CA deep dive, TX deep dive, or downloads in Resources) and interpret charts through the shared data model."
+  var SUGGESTIONS = [
+    "What is Evasta?",
+    "Show me California data",
+    "Where can I download CSVs?",
+    "How do I read the charts?"
   ];
 
   var conversationHistory = [];
@@ -210,10 +237,51 @@
     } catch (e) {}
   })();
 
+  /* ----------------------- Rendering helpers ----------------------------- */
+  function escapeHtml(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  // Turn the assistant's lightweight markdown into safe HTML: escape first,
+  // then re-introduce a small allow-list of formatting and clickable page links.
+  function renderRich(text) {
+    var html = escapeHtml(text);
+
+    // [page.html] and bare page.html mentions -> friendly clickable links.
+    Object.keys(PAGE_LABELS).forEach(function (page) {
+      var label = PAGE_LABELS[page];
+      var esc = page.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      var bracket = new RegExp("\\[" + esc + "\\]", "g");
+      var bare = new RegExp("(?<![\\w\\/\">])" + esc + "(?![\\w\">])", "g");
+      var anchor = '<a class="evasta-link" href="' + page + '">' + label + "</a>";
+      html = html.replace(bracket, anchor).replace(bare, anchor);
+    });
+
+    // **bold**
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+
+    // Bullet lists ("- item" / "* item" lines).
+    var lines = html.split("\n");
+    var out = [], listBuf = null;
+    function flushList() {
+      if (listBuf) { out.push("<ul>" + listBuf.join("") + "</ul>"); listBuf = null; }
+    }
+    lines.forEach(function (line) {
+      var m = line.match(/^\s*[-*]\s+(.*)$/);
+      if (m) { (listBuf = listBuf || []).push("<li>" + m[1] + "</li>"); }
+      else { flushList(); if (line.trim()) out.push("<p>" + line + "</p>"); }
+    });
+    flushList();
+    return out.join("");
+  }
+
   function addMessage(sender, text) {
     var div = document.createElement("div");
     div.className = "evasta-msg " + (sender === "user" ? "user" : "bot");
-    div.textContent = String(text || "");
+    if (sender === "user") div.textContent = String(text || "");
+    else div.innerHTML = renderRich(text);
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
     return div;
@@ -228,8 +296,26 @@
     return t;
   }
 
-  function norm(s) { return String(s || "").trim(); }
-  function lower(s) { return norm(s).toLowerCase(); }
+  function showSuggestions() {
+    var wrap = document.createElement("div");
+    wrap.className = "evasta-suggestions";
+    SUGGESTIONS.forEach(function (s) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "evasta-chip";
+      chip.textContent = s;
+      chip.addEventListener("click", function () {
+        wrap.remove();
+        input.value = s;
+        send();
+      });
+      wrap.appendChild(chip);
+    });
+    messages.appendChild(wrap);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function lower(s) { return String(s || "").trim().toLowerCase(); }
   function hasAny(text, words) {
     var t = lower(text);
     for (var i = 0; i < words.length; i++) if (t.indexOf(words[i]) !== -1) return true;
@@ -241,77 +327,56 @@
     if (conversationHistory.length > HISTORY_MAX) conversationHistory = conversationHistory.slice(-HISTORY_MAX);
   }
 
+  // Local safety net used only if the AI endpoint can't be reached.
   function offlineAnswer(question) {
     var q = lower(question);
-
-    if (!q) return "Tell me what you’re trying to do (navigate, download data, or understand what the charts mean).";
-    if (/^(hi|hello|hey)\b/.test(q)) return "Hi! 👋 What do you want to find on Evasta? (Example: California analytics, Texas analytics, or CSV downloads)";
-    if (/\b(thanks|thank you|thx)\b/.test(q)) return "You’re welcome! Want help navigating to a specific page (California, Texas, Resources, or About)?";
-    if (/\b(bye|goodbye)\b/.test(q)) return "Goodbye! Come back anytime—I'll help you navigate Evasta.";
-
-    if (hasAny(q, ["download", "csv", "dataset", "resources"])) {
-      return "For CSV downloads, open `resources.html` (EV Network Summary, State Summary, City Summary (California), and raw EV Stations data).";
-    }
-    if (hasAny(q, ["california", "county"])) {
-      return "For California county-level analytics, open `california-deep-dive.html`. Example state: California.";
-    }
-    if (hasAny(q, ["texas", "tx deep"])) {
-      return "For Texas-focused insights, open `texas-deep-dive.html`.";
-    }
-    if (hasAny(q, ["about", "mission", "what is evasta", "what does evasta do"])) {
-      if (hasAny(q, ["mission", "what does evasta do"])) return "From the About page: the mission is to turn raw federal EV charging data into practical, planning-focused insights.";
-      if (hasAny(q, ["who", "for", "audience"])) return "From the About page: it’s made for counties/regional planners, Clean Cities Coalitions, state energy offices, researchers, EV companies, analysts, journalists, and civic data advocates.";
-      return "From the About page: Evasta translates public AFDC EV charging data into clearer charts and actionable insights for planning.";
-    }
-    if (hasAny(q, ["data source", "afdc", "doe", "department of energy"])) {
-      return "The data comes from the U.S. DOE Alternative Fuels Data Center (AFDC). Evasta is not affiliated with DOE/AFDC; it uses their public data for analytics.";
-    }
-    if (hasAny(q, ["map", "station", "location"])) {
-      return "For the station map tool, open `fastchargingstationmap_test.html` and choose state/city filters.";
-    }
-
-    if (q.length < 5) {
-      return "Can you tell me which page you’re on, or what you want to learn? (Example: “California county analytics”, “download CSV”, or “What is Evasta’s mission?”)";
-    }
-
-    return "I can help with navigation and explanations from the About page. If you ask about a specific feature, tell me which page you’re viewing. Example: California → `california-deep-dive.html`.";
+    if (!q) return "Tell me what you’re trying to do — navigate the site, download data, or understand what the charts mean.";
+    if (/^(hi|hello|hey)\b/.test(q)) return "Hi! 👋 What would you like to find on Evasta?";
+    if (hasAny(q, ["download", "csv", "dataset", "resources"]))
+      return "You can download every dataset — network, state, and California county summaries plus raw stations — from [resources.html].";
+    if (hasAny(q, ["california", "county"]))
+      return "California county-level and network analytics live on the [california-deep-dive.html].";
+    if (hasAny(q, ["texas", " tx"]))
+      return "Texas city-level and network insights are on the [texas-deep-dive.html].";
+    if (hasAny(q, ["map", "station", "location", "near"]))
+      return "Try the interactive [fastchargingstationmap_test.html] to explore stations with state and city filters.";
+    if (hasAny(q, ["about", "mission", "what is evasta", "who", "data source", "afdc"]))
+      return "Evasta turns public U.S. DOE AFDC EV charging data into clear, planning-focused analytics. Full details are on the [about.html].";
+    return "I can help you navigate Evasta and answer questions from the About page. Try the [about.html], or the [california-deep-dive.html] and [resources.html]. (The live assistant is offline right now.)";
   }
 
-  async function getAIResponse(question) {
-    try {
-      var canParse = (typeof Parse !== "undefined" && Parse && Parse.Cloud && typeof Parse.Cloud.run === "function");
-      if (!canParse) return offlineAnswer(question);
+  /* --------------------------- Networking -------------------------------- */
+  // Streams the reply from /api/chat, updating the bubble as tokens arrive.
+  async function streamAIResponse(question, bubble) {
+    var res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: question, history: conversationHistory })
+    });
 
-      var aiSystem = [
-        "You are the Evasta website assistant.",
-        "You must be grounded in the project's navigation and About-page content.",
-        "If the question is outside what Evasta provides, say you don't have that info on this site and guide the user to relevant pages.",
-        "When relevant, mention at least one US example state (California or Texas).",
-        "Be helpful and avoid repeating the same canned sentence every message."
-      ].join("\n");
+    if (!res.ok || !res.body) throw new Error("Bad response: " + res.status);
 
-      var messagesForAI = [{ role: "system", content: aiSystem }]
-        .concat(conversationHistory)
-        .concat([{ role: "user", content: String(question || "") }]);
+    var reader = res.body.getReader();
+    var decoder = new TextDecoder();
+    var full = "";
+    var cursor = '<span class="evasta-cursor"></span>';
 
-      var res = await Parse.Cloud.run("evastaAIChat", {
-        messages: messagesForAI,
-        question: question,
-        context: { pages: PAGE_MAP, about: ABOUT_SNIPPETS },
-        mode: "site_assistant"
-      });
-
-      var reply = res && (res.reply || res.answer || res.text || (res.result && (res.result.reply || res.result.text)));
-      if (!reply || typeof reply !== "string") return offlineAnswer(question);
-
-      var cleaned = reply.trim();
-      if (!cleaned) return offlineAnswer(question);
-      return cleaned;
-    } catch (e) {
-      return offlineAnswer(question);
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      full += decoder.decode(chunk.value, { stream: true });
+      bubble.innerHTML = renderRich(full) + cursor;
+      messages.scrollTop = messages.scrollHeight;
     }
+
+    full = full.trim();
+    if (!full) throw new Error("Empty response");
+    bubble.innerHTML = renderRich(full);
+    messages.scrollTop = messages.scrollHeight;
+    return full;
   }
 
+  /* ------------------------- Open / close -------------------------------- */
   var greeted = false;
   function openChat() {
     panel.classList.add("is-open");
@@ -320,7 +385,8 @@
     launcher.setAttribute("aria-expanded", "true");
     if (!greeted) {
       greeted = true;
-      addMessage("bot", "Hi! 👋 I’m the Evasta Assistant. Ask me how to navigate the website or questions based on the About page.");
+      addMessage("bot", "Hi! 👋 I’m the Evasta Assistant. I can help you find your way around the site and answer questions about our EV charging analytics. What are you looking for?");
+      showSuggestions();
     }
     setTimeout(function () { input.focus(); }, 60);
   }
@@ -339,6 +405,7 @@
     if (e.key === "Escape" && panel.classList.contains("is-open")) closeChat();
   });
 
+  /* ----------------------------- Send ------------------------------------ */
   var busy = false;
   async function send() {
     var text = input.value.trim();
@@ -346,14 +413,27 @@
     busy = true;
     sendBtn.disabled = true;
 
+    var existing = messages.querySelector(".evasta-suggestions");
+    if (existing) existing.remove();
+
     addMessage("user", text);
     input.value = "";
     input.style.height = "auto";
 
     var typing = showTyping();
-    var reply = await getAIResponse(text);
-    typing.remove();
-    addMessage("bot", reply);
+    var reply;
+    try {
+      typing.remove();
+      var bubble = addMessage("bot", "");
+      bubble.innerHTML = '<span class="evasta-cursor"></span>';
+      reply = await streamAIResponse(text, bubble);
+    } catch (e) {
+      if (typing.parentNode) typing.remove();
+      reply = offlineAnswer(text);
+      var last = messages.querySelector(".evasta-msg.bot:last-child");
+      if (last && last.textContent === "") last.innerHTML = renderRich(reply);
+      else addMessage("bot", reply);
+    }
 
     pushHistory("user", text);
     pushHistory("assistant", reply);
@@ -373,6 +453,7 @@
     input.style.height = Math.min(input.scrollHeight, 120) + "px";
   });
 
+  /* ---------------------------- Resize ----------------------------------- */
   var resizing = false, startX = 0, startY = 0, startW = 0, startH = 0;
   function onResizeStart(e) {
     resizing = true;

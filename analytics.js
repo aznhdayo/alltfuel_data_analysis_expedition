@@ -1501,7 +1501,10 @@ function setCaCountySelection(countyNames) {
 }
 
 function showCaCountyChartsAwaitingSelection() {
-  return renderCountyDeepDiveCharts([]);
+  return Promise.all([
+    renderCountyDeepDiveCharts([]),
+    loadCaliforniaRatioCharts([])
+  ]);
 }
 
 async function updateCaHeroTotalsForSelection(countyNames = []) {
@@ -1581,9 +1584,10 @@ function selectCaCounty(countyName, opts = {}) {
 
   startGlobalLoad('Loading county selection…');
   Promise.all([
-  updateCaHeroTotalsForSelection(next),
-  renderCountyDeepDiveCharts(next),
-  renderCANetworkShareDonut(next)
+    updateCaHeroTotalsForSelection(next),
+    renderCountyDeepDiveCharts(next),
+    renderCANetworkShareDonut(next),
+    loadCaliforniaRatioCharts(next)
   ])
     .catch(err => console.error('County deep-dive render failed:', err))
     .finally(finishGlobalLoad);
@@ -1593,9 +1597,10 @@ function refreshCaYearSelection() {
   const counties = getSelectedCaCountyNames();
   startGlobalLoad(counties.length ? 'Loading county comparison charts…' : 'Loading California totals…');
   Promise.all([
-  updateCaHeroTotalsForSelection(counties),
-  renderCountyDeepDiveCharts(counties),
-  renderCANetworkShareDonut(counties)
+    updateCaHeroTotalsForSelection(counties),
+    renderCountyDeepDiveCharts(counties),
+    renderCANetworkShareDonut(counties),
+    loadCaliforniaRatioCharts(counties)
   ])
     .catch(err => console.error('CA year refresh failed:', err))
     .finally(finishGlobalLoad);
@@ -1610,9 +1615,10 @@ function resetCaYearSelection() {
   setCaCountySelection([]);
   startGlobalLoad('Resetting California totals…');
   Promise.all([
-  updateCaHeroTotalsForSelection([]),
-  renderCountyDeepDiveCharts([]),
-  renderCANetworkShareDonut([])
+    updateCaHeroTotalsForSelection([]),
+    renderCountyDeepDiveCharts([]),
+    renderCANetworkShareDonut([]),
+    loadCaliforniaRatioCharts([])
   ])
     .catch(err => console.error('CA reset failed:', err))
     .finally(finishGlobalLoad);
@@ -3304,45 +3310,116 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-async function loadCaliforniaRatioCharts() {
+async function loadCaliforniaRatioCharts(countyNames = []) {
   if (typeof Parse === "undefined") return;
 
+  const counties = (Array.isArray(countyNames) ? countyNames : [countyNames])
+    .filter(Boolean)
+    .map(getCaCountyDisplayName)
+    .filter(Boolean)
+    .slice(0, MAX_CA_COMPARE_COUNTIES);
+  const selectedCountyNorms = new Set(counties.map(normalizeCaCountyName));
+
+  const plugsField = selectedPlugsField || 'total_all_plugs';
   const query = new Parse.Query("County_Plug_EV_Metrics");
   query.limit(10000);
+  query.select(['year', 'county', plugsField, 'cumulative_total_electric_phev']);
+  if (selectedCountyNorms.size) {
+    query.containedIn('county', counties);
+  }
 
   const rows = await query.find();
 
   // Build yearly totals for 2014–2025
-  const yearTotals = {};
+  const labels = [];
+  const yearRange = [];
   for (let year = 2014; year <= 2025; year++) {
-    yearTotals[year] = { plugs: 0, evs: 0 };
+    yearRange.push(year);
+    labels.push(String(year));
+  }
+
+  const countyTotalsByYear = {};
+  if (selectedCountyNorms.size) {
+    counties.forEach((countyName) => {
+      const norm = normalizeCaCountyName(countyName);
+      countyTotalsByYear[norm] = {
+        display: getCaCountyDisplayName(countyName),
+        totals: {}
+      };
+      yearRange.forEach((year) => {
+        countyTotalsByYear[norm].totals[year] = { plugs: 0, evs: 0 };
+      });
+    });
+  } else {
+    yearRange.forEach((year) => {
+      countyTotalsByYear.ALL = countyTotalsByYear.ALL || { display: `${plugsFieldLabel(plugsField)} — California total`, totals: {} };
+      countyTotalsByYear.ALL.totals[year] = { plugs: 0, evs: 0 };
+    });
   }
 
   rows.forEach((row) => {
+    const county = String(row.get('county') || '').trim();
+    const countyNorm = normalizeCaCountyName(county);
+    if (selectedCountyNorms.size && !selectedCountyNorms.has(countyNorm)) return;
+
     const year = Number(row.get("year"));
     if (year < 2014 || year > 2025) return;
 
-    const plugs = toNumber(row.get("total_all_plugs"));
+    const plugs = toNumber(row.get(plugsField));
     const evs = toNumber(row.get("cumulative_total_electric_phev"));
 
-    yearTotals[year].plugs += plugs;
-    yearTotals[year].evs += evs;
+    const target = selectedCountyNorms.size ? countyTotalsByYear[countyNorm] : countyTotalsByYear.ALL;
+    if (!target) return;
+    target.totals[year].plugs += plugs;
+    target.totals[year].evs += evs;
   });
 
-  const labels = [];
-  const plugsPer1000Data = [];
-  const evsPerPlugData = [];
+  const plugsDatasets = [];
+  const evsDatasets = [];
+  const countyEntries = Object.values(countyTotalsByYear);
 
-  for (let year = 2014; year <= 2025; year++) {
-    const totals = yearTotals[year];
-    labels.push(String(year));
+  countyEntries.forEach((entry, index) => {
+    const plugsPer1000Data = [];
+    const evsPerPlugData = [];
+    yearRange.forEach((year) => {
+      const totals = entry.totals[year] || { plugs: 0, evs: 0 };
+      plugsPer1000Data.push(totals.evs > 0 ? (totals.plugs / totals.evs) * 1000 : null);
+      evsPerPlugData.push(totals.plugs > 0 ? (totals.evs / totals.plugs) : null);
+    });
 
-    const plugsPer1000 = totals.evs > 0 ? (totals.plugs / totals.evs) * 1000 : null;
-    const evsPerPlug = totals.plugs > 0 ? (totals.evs / totals.plugs) : null;
+    const color = CHART_COLORS[index % CHART_COLORS.length];
+    const backgroundColor = selectedCountyNorms.size ? `${color}22` : `rgba(29, 111, 196, 0.12)`;
 
-    plugsPer1000Data.push(plugsPer1000);
-    evsPerPlugData.push(evsPerPlug);
-  }
+    plugsDatasets.push({
+      label: selectedCountyNorms.size ? entry.display : `${plugsFieldLabel(plugsField)} per 1,000 EVs`,
+      data: plugsPer1000Data,
+      borderColor: selectedCountyNorms.size ? color : "#1d6fc4",
+      backgroundColor: selectedCountyNorms.size ? backgroundColor : "rgba(29, 111, 196, 0.12)",
+      pointBackgroundColor: selectedCountyNorms.size ? color : "#1d6fc4",
+      pointBorderColor: "#ffffff",
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      borderWidth: 3,
+      tension: 0.3,
+      fill: false,
+      spanGaps: true
+    });
+
+    evsDatasets.push({
+      label: selectedCountyNorms.size ? entry.display : `EVs per ${plugsFieldLabel(plugsField).toLowerCase()}`,
+      data: evsPerPlugData,
+      borderColor: selectedCountyNorms.size ? color : "#f28c28",
+      backgroundColor: selectedCountyNorms.size ? `${color}22` : "rgba(242, 140, 40, 0.12)",
+      pointBackgroundColor: selectedCountyNorms.size ? color : "#f28c28",
+      pointBorderColor: "#ffffff",
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      borderWidth: 3,
+      tension: 0.3,
+      fill: false,
+      spanGaps: true
+    });
+  });
 
   // Chart 1: plugs per 1000 EVs
   const plugsCtx = document.getElementById("caPlugsPer1000Chart")?.getContext("2d");
@@ -3353,20 +3430,7 @@ async function loadCaliforniaRatioCharts() {
       type: "line",
       data: {
         labels,
-        datasets: [{
-          label: "Plugs per 1,000 EVs",
-          data: plugsPer1000Data,
-          borderColor: "#1d6fc4",
-          backgroundColor: "rgba(29, 111, 196, 0.12)",
-          pointBackgroundColor: "#1d6fc4",
-          pointBorderColor: "#ffffff",
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          borderWidth: 3,
-          tension: 0.3,
-          fill: true,
-          spanGaps: true
-        }]
+        datasets: plugsDatasets
       },
       options: {
         responsive: true,
@@ -3399,20 +3463,7 @@ async function loadCaliforniaRatioCharts() {
       type: "line",
       data: {
         labels,
-        datasets: [{
-          label: "EVs per Plug",
-          data: evsPerPlugData,
-          borderColor: "#f28c28",
-          backgroundColor: "rgba(242, 140, 40, 0.12)",
-          pointBackgroundColor: "#f28c28",
-          pointBorderColor: "#ffffff",
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          borderWidth: 3,
-          tension: 0.3,
-          fill: true,
-          spanGaps: true
-        }]
+        datasets: evsDatasets
       },
       options: {
         responsive: true,
